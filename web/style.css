@@ -1,0 +1,156 @@
+:root{
+  --bg:#0d1117; --painel:#161b22; --borda:#21262d;
+  --txt:#e6edf3; --txt2:#8b949e; --txt3:#565f6b; --acento:#F7931A;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--txt); overflow:hidden;
+  font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;
+  display:flex; flex-direction:column;
+}
+
+header{
+  display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;
+  padding:13px 20px; border-bottom:1px solid var(--borda); flex:none; z-index:2;
+}
+h1{font-size:16px; font-weight:600; margin:0; letter-spacing:.2px}
+h1 span{color:var(--acento)}
+.meta{color:var(--txt2); font-size:12px}
+.controles{margin-left:auto; display:flex; align-items:center; gap:8px}
+
+button{
+  background:var(--painel); color:var(--txt2); border:1px solid var(--borda);
+  padding:5px 11px; border-radius:6px; font-size:12px; cursor:pointer;
+  font-family:inherit;
+}
+button:hover{color:var(--txt); border-color:#3d444d}
+button[aria-pressed="true"]{
+  background:rgba(247,147,26,.12); color:var(--acento); border-color:var(--acento);
+}
+
+/* ---- rolagem entre as duas secoes ---- */
+#rolagem{flex:1; overflow-y:auto; scroll-behavior:smooth}
+#rolagem::-webkit-scrollbar{width:10px}
+#rolagem::-webkit-scrollbar-thumb{background:#21262d; border-radius:5px}
+
+#secGrafico{display:flex; height:calc(100vh - 51px); min-height:480px}
+
+/* ---- painel lateral ---- */
+#painel{
+  width:246px; flex:none; overflow-y:auto; padding:14px 0 30px;
+  border-right:1px solid var(--borda); background:#0b0f14;
+}
+#painel::-webkit-scrollbar{width:9px}
+#painel::-webkit-scrollbar-thumb{background:#21262d; border-radius:5px}
+.secao{margin-bottom:6px}
+.secao-tit{
+  padding:9px 16px 6px; font-size:11px; font-weight:600; letter-spacing:.5px;
+  text-transform:uppercase; color:var(--txt2);
+}
+.secao-tit small{
+  display:block; text-transform:none; letter-spacing:0; font-weight:400;
+  color:var(--txt3); font-size:10.5px;
+}
+.grupo-tit{
+  padding:10px 16px 3px; font-size:10.5px; font-weight:600;
+  letter-spacing:.4px; text-transform:uppercase; color:var(--txt3);
+}
+label.item{
+  display:flex; align-items:center; gap:8px; padding:4px 16px;
+  cursor:pointer; font-size:12.5px; color:var(--txt2); user-select:none;
+}
+label.item:hover{background:#11161d; color:var(--txt)}
+label.item input{accent-color:var(--acento); margin:0; cursor:pointer; flex:none}
+label.item .pip{width:9px; height:2.5px; border-radius:2px; flex:none}
+label.item.on{color:var(--txt)}
+
+/* ---- area do grafico ---- */
+#area{flex:1; display:flex; flex-direction:column; min-width:0}
+#base{
+  padding:8px 20px; border-bottom:1px solid var(--borda);
+  color:var(--txt2); font-size:12px; flex:none;
+}
+#base b{color:var(--txt); font-weight:600}
+#grafico{flex:1; min-height:0}
+#vazio{
+  display:flex; align-items:center; justify-content:center; height:100%;
+  color:var(--txt3); font-size:13px;
+}
+#erro{padding:20px; color:#f85149; display:none; white-space:pre-wrap}
+
+/* ======================= secao de insights ======================= */
+#secInsights{
+  border-top:1px solid var(--borda); padding:26px 24px 60px;
+  min-height:100vh; background:#0a0e13;
+}
+.ins-topo{max-width:900px; margin-bottom:22px}
+#secInsights h2{font-size:17px; font-weight:600; margin:0 0 6px}
+.ins-sub{margin:0; color:var(--txt2); font-size:12.5px; line-height:1.6}
+.ins-sub b{color:var(--txt)}
+
+.ins-grid{display:flex; gap:26px; align-items:flex-start}
+.ins-lado{
+  width:270px; flex:none; background:var(--painel);
+  border:1px solid var(--borda); border-radius:9px; padding:15px;
+}
+.ins-centro{flex:1; min-width:0}
+
+.campo{margin-bottom:14px}
+.campo label{
+  display:block; font-size:10.5px; font-weight:600; letter-spacing:.4px;
+  text-transform:uppercase; color:var(--txt3); margin-bottom:5px;
+}
+.campo select, .campo input{
+  width:100%; background:#0d1117; color:var(--txt); font-family:inherit;
+  border:1px solid var(--borda); border-radius:6px; padding:6px 8px; font-size:12.5px;
+}
+.campo select:focus, .campo input:focus{outline:none; border-color:var(--acento)}
+.botoes{display:flex; flex-wrap:wrap; gap:5px}
+.botoes button{padding:4px 9px; font-size:11.5px}
+.dica{margin-top:6px; font-size:11px; color:var(--txt3); line-height:1.5}
+.dica b{color:var(--txt2); font-weight:600}
+
+.metodos{display:flex; flex-direction:column; gap:4px}
+.met{text-align:left; padding:6px 9px; font-size:12px; line-height:1.35}
+
+#insGrafico{height:340px; margin-bottom:14px}
+
+.tab{
+  width:100%; border-collapse:collapse; font-size:12.5px;
+  background:var(--painel); border:1px solid var(--borda); border-radius:8px;
+  overflow:hidden; margin-bottom:12px;
+}
+.tab th{
+  text-align:left; padding:7px 12px; font-size:10.5px; text-transform:uppercase;
+  letter-spacing:.4px; color:var(--txt3); font-weight:600;
+  border-bottom:1px solid var(--borda); background:#12171f;
+}
+.tab td{padding:6px 12px; border-bottom:1px solid #1a1f27; color:var(--txt)}
+.tab td:first-child{color:var(--txt2); width:44%}
+.tab tr:last-child td{border-bottom:none}
+.tab tr.atual td{background:rgba(247,147,26,.09)}
+.tab tr.atual td:first-child{color:var(--acento)}
+
+.aviso, .ok{
+  font-size:12px; line-height:1.6; padding:10px 13px; border-radius:8px;
+  margin-bottom:12px; border:1px solid;
+}
+.aviso{background:rgba(210,153,34,.07); border-color:rgba(210,153,34,.28); color:#d9b168}
+.ok{background:rgba(63,185,80,.07); border-color:rgba(63,185,80,.3); color:#7ee787}
+
+#insExplica{display:flex; gap:14px; flex-wrap:wrap; margin-top:4px}
+.exp{
+  flex:1; min-width:280px; background:var(--painel); border:1px solid var(--borda);
+  border-radius:9px; padding:13px 15px;
+}
+.exp-tit{
+  font-size:10.5px; font-weight:600; letter-spacing:.5px; text-transform:uppercase;
+  color:var(--acento); margin-bottom:6px;
+}
+.exp p{margin:0; font-size:12.5px; line-height:1.65; color:var(--txt2)}
+
+@media (max-width:1000px){
+  .ins-grid{flex-direction:column}
+  .ins-lado{width:100%}
+}

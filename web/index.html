@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>BTC x Macro</title>
+<link rel="stylesheet" href="style.css">
+<script src="plotly.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>BTC <span>×</span> Macro</h1>
+  <div class="meta" id="periodo"></div>
+  <div class="controles">
+    <button id="btnLimpar" title="Desmarca todas as séries">Limpar</button>
+    <button id="btnPadrao" title="Volta à seleção inicial">Padrão</button>
+    <button id="btnEscala" aria-pressed="true">Escala log</button>
+    <button id="btnInsights" title="Ir para a análise estatística">Insights ↓</button>
+  </div>
+</header>
+
+<div id="rolagem">
+
+  <section id="secGrafico">
+    <aside id="painel">
+      <div class="secao">
+        <div class="secao-tit">Tendência <small>base 100, comparáveis</small></div>
+        <div id="listaIndexadas"></div>
+      </div>
+      <div class="secao">
+        <div class="secao-tit">Oscilador <small>escala própria, um por vez</small></div>
+        <div id="listaNativas"></div>
+      </div>
+    </aside>
+
+    <div id="area">
+      <div id="base"></div>
+      <div id="grafico"></div>
+    </div>
+  </section>
+
+  <section id="secInsights">
+    <div class="ins-topo">
+      <h2>Análise estatística</h2>
+      <p class="ins-sub">
+        Tudo é calculado no seu navegador, sem rede e sem custo. Correlação e
+        regressão rodam sobre <b>retornos diários</b>, nunca sobre preços — duas
+        séries em tendência dão correlação perto de 1 sem ter relação nenhuma.
+      </p>
+    </div>
+
+    <div class="ins-grid">
+      <div class="ins-lado">
+        <div class="campo">
+          <label id="rotuloA">Série A</label>
+          <select id="selA"></select>
+        </div>
+        <div class="campo" id="linhaB">
+          <label id="rotuloB">Série B</label>
+          <select id="selB"></select>
+        </div>
+
+        <div class="campo">
+          <label>Período</label>
+          <div class="botoes">
+            <button data-anos="1">1A</button>
+            <button data-anos="2">2A</button>
+            <button data-anos="3">3A</button>
+            <button data-anos="5">5A</button>
+            <button data-anos="max">Máx</button>
+            <button data-anos="grafico" title="Usa o zoom atual do gráfico acima">Janela do gráfico</button>
+          </div>
+          <div id="insPeriodo" class="dica"></div>
+        </div>
+
+        <div class="campo" id="linhaJanela">
+          <label>Janela móvel (dias)</label>
+          <input id="inpJanela" type="number" value="90" min="10" max="730" step="10">
+        </div>
+        <div class="campo" id="linhaHorizonte">
+          <label>Horizonte à frente (dias)</label>
+          <input id="inpHorizonte" type="number" value="90" min="5" max="500" step="5">
+          <label style="margin-top:8px">Número de faixas</label>
+          <input id="inpFaixas" type="number" value="5" min="2" max="10" step="1">
+        </div>
+        <div class="campo" id="linhaDefas">
+          <label>Defasagem máxima (dias)</label>
+          <input id="inpDefas" type="number" value="60" min="5" max="180" step="5">
+        </div>
+
+        <div class="campo">
+          <label>Método</label>
+          <div id="insMetodos" class="metodos"></div>
+          <div id="insNivel" class="dica"></div>
+        </div>
+      </div>
+
+      <div class="ins-centro">
+        <div id="insGrafico"></div>
+        <div id="insNumeros"></div>
+        <div id="insExplica"></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div id="erro"></div>
+
+<script src="estat.js"></script>
+<script src="insights.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
