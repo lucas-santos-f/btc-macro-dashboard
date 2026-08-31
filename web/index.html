@@ -23,20 +23,69 @@
 
   <section id="secGrafico">
     <aside id="painel">
-      <div class="secao">
-        <div class="secao-tit">Tendência <small>base 100, comparáveis</small></div>
-        <div id="listaIndexadas"></div>
+      <nav class="side-nav" aria-label="Áreas do dashboard">
+        <button class="side-tab" data-view="mercado" aria-pressed="true">Mercado atual</button>
+        <button class="side-tab" data-view="preditor" aria-pressed="false">Preditor EUA</button>
+      </nav>
+      <div id="menuMercado">
+        <div class="secao">
+          <div class="secao-tit">Tendência <small>base 100, comparáveis</small></div>
+          <div id="listaIndexadas"></div>
+        </div>
+        <div class="secao">
+          <div class="secao-tit">Oscilador <small>escala própria, um por vez</small></div>
+          <div id="listaNativas"></div>
+        </div>
       </div>
-      <div class="secao">
-        <div class="secao-tit">Oscilador <small>escala própria, um por vez</small></div>
-        <div id="listaNativas"></div>
+      <div id="menuPreditor" hidden>
+        <div class="predict-side-copy">
+          <strong>Preditor de crise e mercados</strong>
+          <p>Probabilidades calibradas, benchmarks e qualidade fora da amostra.</p>
+          <button id="btnCopyAiSide">Copiar contexto para IA</button>
+        </div>
       </div>
     </aside>
 
-    <div id="area">
+    <div id="area" class="view-panel">
       <div id="base"></div>
       <div id="grafico"></div>
     </div>
+
+    <main id="preditorView" class="view-panel" hidden>
+      <div class="predict-head">
+        <div>
+          <div class="eyebrow">Estados Unidos · ativos de risco</div>
+          <h2>Preditor de crise e mercados</h2>
+          <p id="predictMeta">Carregando resultados...</p>
+        </div>
+        <button id="btnCopyAi">Copiar contexto para IA</button>
+      </div>
+      <div id="predictWarnings"></div>
+      <section class="predict-section">
+        <h3>Probabilidades</h3>
+        <div id="forecastCards" class="forecast-grid"></div>
+      </section>
+      <section class="predict-section split-section">
+        <div>
+          <h3>Benchmarks</h3>
+          <div id="benchmarkList"></div>
+        </div>
+        <div>
+          <h3>Indicadores atuais</h3>
+          <div id="indicatorGrid" class="indicator-grid"></div>
+        </div>
+      </section>
+      <section class="predict-section">
+        <h3>Qualidade e metodologia</h3>
+        <div id="methodology"></div>
+      </section>
+      <section class="predict-section">
+        <details>
+          <summary>Estado das fontes</summary>
+          <div id="sourceStatus"></div>
+        </details>
+      </section>
+    </main>
   </section>
 
   <section id="secInsights">
@@ -110,5 +159,6 @@
 <script src="estat.js"></script>
 <script src="insights.js"></script>
 <script src="app.js"></script>
+<script src="predictor.js"></script>
 </body>
 </html>
