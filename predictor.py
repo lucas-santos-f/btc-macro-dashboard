@@ -1,8 +1,8 @@
 """Coleta dados públicos, treina modelos temporais e gera web/predictor.json.
 
-O pipeline não usa LLM nem exige chave. FRED, BLS, BEA, Treasury e NBER são
-representados por séries públicas do FRED Graph CSV; chaves opcionais podem ser
-fornecidas por variáveis de ambiente sem entrar no repositório.
+O pipeline não usa LLM nem exige chave comercial. As séries FRED possuem
+fallbacks diretos para BLS, BEA, Treasury, DOL, Chicago Fed e OFR; a chave
+gratuita da BEA continua opcional.
 """
 
 from __future__ import annotations
@@ -13,7 +13,9 @@ import json
 import math
 import os
 import tempfile
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path
 
 import numpy as np
@@ -81,6 +83,25 @@ BLS_DIRECT = {
     "wages": "CES0500000003", "jolts": "JTS000000000000000JOL",
 }
 
+BEA_DIRECT = {
+    "pce_price": ("T20304", "M", "personal consumption expenditures", False),
+    "core_pce": ("T20304", "M", "personal consumption expenditures excluding food and energy", True),
+    "real_gdp": ("T10106", "Q", "gross domestic product", False),
+    "real_income": ("T20606", "M", "disposable personal income", False),
+    "consumption": ("T20600", "M", "personal consumption expenditures", False),
+}
+
+TREASURY_DIRECT = {
+    "dgs10": ("daily_treasury_yield_curve", "BC_10YEAR", 1990, "Treasury 10 anos", "%"),
+    "dgs3m": ("daily_treasury_yield_curve", "BC_3MONTH", 1990, "Treasury 3 meses", "%"),
+    "real10": ("daily_treasury_real_yield_curve", "TC_10YEAR", 2003, "Juro real 10 anos", "%"),
+}
+
+TREASURY_URL = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml"
+DOL_CLAIMS_URL = "https://oui.doleta.gov/unemploy/wkclaims/report.asp"
+CHICAGO_NFCI_URL = "https://api.data.chicagofed.org/NFCI/nfci-data-series-csv.csv"
+OFR_FSI_URL = "https://www.financialresearch.gov/financial-stress-index/data/fsi.csv"
+
 RECESSIONS = [
     ("1960-05", "1961-02"), ("1969-12", "1970-11"),
     ("1973-11", "1975-03"), ("1980-01", "1980-07"),
@@ -137,7 +158,6 @@ def fetch_fred() -> tuple[pd.DataFrame, dict]:
             url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
             response = requests.get(url, headers=UA, timeout=(8, 18))
             response.raise_for_status()
-            from io import StringIO
             frame = pd.read_csv(StringIO(response.text))
             date_col = frame.columns[0]
             value_col = frame.columns[-1]
@@ -157,12 +177,43 @@ def fetch_fred() -> tuple[pd.DataFrame, dict]:
             status[key] = state
             if series is not None:
                 out[key] = series
-    missing_bls = [key for key in BLS_DIRECT if key not in out]
-    if missing_bls:
-        direct, direct_status = fetch_bls_direct(missing_bls)
-        out.update(direct)
-        status.update(direct_status)
+    _apply_fallback(out, status, BLS_DIRECT, fetch_bls_direct)
+    _apply_fallback(out, status, BEA_DIRECT, fetch_bea_direct)
+    _apply_fallback(out, status, ["claims"], fetch_claims_direct)
+    _apply_fallback(out, status, TREASURY_DIRECT, fetch_treasury_direct)
+    _apply_fallback(out, status, ["hy_spread"], fetch_ofr_credit_direct)
+    _apply_fallback(out, status, ["nfci"], fetch_nfci_direct)
     return pd.DataFrame(out).sort_index(), status
+
+
+def _apply_fallback(out: dict, status: dict, candidates, fetcher) -> None:
+    """Mescla um fallback sem permitir que sua falha interrompa outros adaptadores."""
+    missing = [key for key in candidates if key not in out]
+    if not missing:
+        return
+    try:
+        direct, direct_status = fetcher(missing)
+    except Exception as exc:
+        direct = {}
+        direct_status = {key: {"ok": False, "fonte": fetcher.__name__, "erro": str(exc)[:180]}
+                         for key in missing}
+    for key in missing:
+        series = direct.get(key)
+        if series is not None and not series.dropna().empty:
+            state = dict(direct_status.get(key, {}))
+            state.update({"ok": True, "fallback": True, "serie_primaria": FRED[key][0]})
+            out[key] = series.dropna().sort_index()
+            status[key] = state
+            continue
+        primary = status.get(key, {"ok": False, "fonte": FRED[key][1], "serie": FRED[key][0],
+                                   "rotulo": FRED[key][2]})
+        fallback = direct_status.get(key, {})
+        source = fallback.get("fonte", fetcher.__name__)
+        primary_error = primary.get("erro", "fonte primária indisponível")
+        fallback_error = fallback.get("erro", "fallback sem dados")
+        status[key] = {**primary, "ok": False,
+                       "erro": f"{primary_error} | {source}: {fallback_error}"[-360:],
+                       "tentativas": [primary.get("fonte", "FRED"), source]}
 
 
 def fetch_bls_direct(keys: list[str]) -> tuple[dict, dict]:
@@ -211,6 +262,203 @@ def fetch_bls_direct(keys: list[str]) -> tuple[dict, dict]:
             status[key] = {"ok": False, "fonte": "BLS API direta", "serie": BLS_DIRECT[key],
                            "rotulo": FRED[key][2], "erro": " | ".join(errors)[-300:] or "sem dados"}
     return out, status
+
+
+def _parse_bea_period(value: str) -> pd.Timestamp | None:
+    value = str(value).strip().upper()
+    if len(value) == 7 and value[4] == "M" and value[5:].isdigit():
+        return pd.Timestamp(int(value[:4]), int(value[5:]), 1)
+    if len(value) == 6 and value[4] == "Q" and value[5].isdigit():
+        return pd.Timestamp(int(value[:4]), (int(value[5]) - 1) * 3 + 1, 1)
+    return None
+
+
+def _parse_bea_rows(rows: list[dict], key: str) -> pd.Series:
+    _, _, wanted, contains = BEA_DIRECT[key]
+    points = {}
+    for row in rows:
+        description = " ".join(str(row.get("LineDescription", "")).lower().split())
+        matched = wanted in description if contains else description == wanted
+        if not matched:
+            continue
+        date = _parse_bea_period(row.get("TimePeriod", ""))
+        value = pd.to_numeric(str(row.get("DataValue", "")).replace(",", ""), errors="coerce")
+        if date is not None and pd.notna(value):
+            points[date] = float(value)
+    return pd.Series(points, name=key, dtype=float).sort_index()
+
+
+def fetch_bea_direct(keys: list[str]) -> tuple[dict, dict]:
+    """Fallback NIPA oficial; usa apenas a chave gratuita quando configurada."""
+    api_key = os.getenv("BEA_API_KEY", "").strip()
+    out, status = {}, {}
+    if not api_key:
+        for key in keys:
+            status[key] = {"ok": False, "fonte": "BEA API direta", "serie": BEA_DIRECT[key][0],
+                           "rotulo": FRED[key][2], "erro": "BEA_API_KEY ausente"}
+        return out, status
+    groups = {}
+    for key in keys:
+        table, frequency, _, _ = BEA_DIRECT[key]
+        groups.setdefault((table, frequency), []).append(key)
+    for (table, frequency), group_keys in groups.items():
+        try:
+            response = requests.get("https://apps.bea.gov/api/data/", params={
+                "UserID": api_key, "method": "GetData", "datasetname": "NIPA",
+                "TableName": table, "Frequency": frequency, "Year": "X", "ResultFormat": "JSON",
+            }, headers=UA, timeout=(8, 30))
+            response.raise_for_status()
+            results = response.json().get("BEAAPI", {}).get("Results", {})
+            if results.get("Error"):
+                raise RuntimeError(results["Error"].get("APIErrorDescription", "BEA recusou a consulta"))
+            rows = results.get("Data") or []
+            for key in group_keys:
+                series = _parse_bea_rows(rows, key)
+                if series.empty:
+                    raise RuntimeError(f"{key}: linha NIPA não encontrada em {table}")
+                out[key] = series
+                status[key] = {"ok": True, "fonte": "BEA API direta", "serie": table,
+                               "rotulo": FRED[key][2], "ultima_data": str(series.index.max().date())}
+        except Exception as exc:
+            for key in group_keys:
+                if key not in out:
+                    status[key] = {"ok": False, "fonte": "BEA API direta", "serie": table,
+                                   "rotulo": FRED[key][2], "erro": str(exc)[:180]}
+    return out, status
+
+
+def _parse_treasury_xml(text: str, fields: dict[str, str]) -> dict[str, list[tuple[pd.Timestamp, float]]]:
+    points = {key: [] for key in fields}
+    root = ET.fromstring(text)
+    for properties in root.iter():
+        if properties.tag.rsplit("}", 1)[-1] != "properties":
+            continue
+        values = {child.tag.rsplit("}", 1)[-1]: child.text for child in properties}
+        date = pd.to_datetime(values.get("NEW_DATE"), errors="coerce")
+        if pd.isna(date):
+            continue
+        for key, field in fields.items():
+            value = pd.to_numeric(values.get(field), errors="coerce")
+            if pd.notna(value):
+                points[key].append((pd.Timestamp(date).normalize(), float(value)))
+    return points
+
+
+def fetch_treasury_direct(keys: list[str]) -> tuple[dict, dict]:
+    """Fallback oficial para curvas nominais e reais, consultado por ano."""
+    requested = {key: TREASURY_DIRECT[key] for key in keys}
+    datasets = {}
+    current = datetime.now().year
+    for key, (dataset, field, start, _, _) in requested.items():
+        item = datasets.setdefault(dataset, {"start": start, "fields": {}})
+        item["start"] = min(item["start"], start)
+        item["fields"][key] = field
+    tasks = [(dataset, year, info["fields"])
+             for dataset, info in datasets.items() for year in range(info["start"], current + 1)]
+
+    def one(task):
+        dataset, year, fields = task
+        try:
+            response = requests.get(TREASURY_URL, params={"data": dataset,
+                                    "field_tdr_date_value": str(year)}, headers=UA, timeout=(8, 25))
+            response.raise_for_status()
+            return _parse_treasury_xml(response.text, fields), None
+        except Exception as exc:
+            return {}, f"{dataset}/{year}: {exc}"
+
+    points = {key: [] for key in keys}
+    errors = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        for batch, error in pool.map(one, tasks):
+            if error:
+                errors.append(error)
+            for key, rows in batch.items():
+                points[key].extend(rows)
+    out, status = {}, {}
+    for key in keys:
+        dataset, field, _, label, unit = TREASURY_DIRECT[key]
+        if points[key]:
+            series = pd.Series(dict(points[key]), name=key).sort_index()
+            out[key] = series
+            status[key] = {"ok": True, "fonte": "U.S. Treasury XML direto",
+                           "serie": f"{dataset}:{field}", "rotulo": label, "unidade": unit,
+                           "ultima_data": str(series.index.max().date()),
+                           "falhas_parciais": len(errors)}
+        else:
+            status[key] = {"ok": False, "fonte": "U.S. Treasury XML direto",
+                           "serie": f"{dataset}:{field}", "rotulo": label,
+                           "erro": " | ".join(errors)[-300:] or "sem dados"}
+    return out, status
+
+
+def fetch_claims_direct(keys: list[str]) -> tuple[dict, dict]:
+    if "claims" not in keys:
+        return {}, {}
+    try:
+        response = requests.post(DOL_CLAIMS_URL, data={"level": "us", "strtdate": "1967",
+                                 "enddate": str(datetime.now().year), "filetype": "xml",
+                                 "submit": "Submit"}, headers=UA, timeout=(8, 45))
+        response.raise_for_status()
+        root = ET.fromstring(response.text)
+        points = {}
+        for week in root.findall(".//week"):
+            date = pd.to_datetime(week.findtext("weekEnded"), errors="coerce")
+            raw = (week.findtext("InitialClaims/SA") or "").replace(",", "").strip()
+            value = pd.to_numeric(raw, errors="coerce")
+            if pd.notna(date) and pd.notna(value):
+                points[pd.Timestamp(date).normalize()] = float(value)
+        series = pd.Series(points, name="claims", dtype=float).sort_index()
+        if series.empty:
+            raise RuntimeError("relatório ETA 539 sem claims nacionais ajustados")
+        return {"claims": series}, {"claims": {"ok": True, "fonte": "U.S. DOL ETA direto",
+                "serie": "ETA 539 initial claims SA", "rotulo": FRED["claims"][2],
+                "unidade": " pedidos", "ultima_data": str(series.index.max().date())}}
+    except Exception as exc:
+        return {}, {"claims": {"ok": False, "fonte": "U.S. DOL ETA direto",
+                    "serie": "ETA 539 initial claims SA", "rotulo": FRED["claims"][2],
+                    "erro": str(exc)[:180]}}
+
+
+def fetch_nfci_direct(keys: list[str]) -> tuple[dict, dict]:
+    if "nfci" not in keys:
+        return {}, {}
+    try:
+        response = requests.get(CHICAGO_NFCI_URL, headers=UA, timeout=(8, 30))
+        response.raise_for_status()
+        frame = pd.read_csv(StringIO(response.text))
+        index = pd.to_datetime(frame["Friday_of_Week"], errors="coerce")
+        values = pd.to_numeric(frame["NFCI"], errors="coerce")
+        series = pd.Series(values.to_numpy(), index=index, name="nfci").dropna().sort_index()
+        if series.empty:
+            raise RuntimeError("CSV NFCI sem observações")
+        return {"nfci": series}, {"nfci": {"ok": True, "fonte": "Chicago Fed direto",
+                "serie": "NFCI", "rotulo": FRED["nfci"][2], "unidade": " índice",
+                "ultima_data": str(series.index.max().date())}}
+    except Exception as exc:
+        return {}, {"nfci": {"ok": False, "fonte": "Chicago Fed direto", "serie": "NFCI",
+                    "rotulo": FRED["nfci"][2], "erro": str(exc)[:180]}}
+
+
+def fetch_ofr_credit_direct(keys: list[str]) -> tuple[dict, dict]:
+    if "hy_spread" not in keys:
+        return {}, {}
+    try:
+        response = requests.get(OFR_FSI_URL, headers=UA, timeout=(8, 30))
+        response.raise_for_status()
+        frame = pd.read_csv(StringIO(response.text))
+        index = pd.to_datetime(frame["Date"], errors="coerce")
+        values = pd.to_numeric(frame["Credit"], errors="coerce")
+        series = pd.Series(values.to_numpy(), index=index, name="hy_spread").dropna().sort_index()
+        if series.empty:
+            raise RuntimeError("CSV OFR FSI sem componente de crédito")
+        return {"hy_spread": series}, {"hy_spread": {"ok": True, "fonte": "OFR FSI direto",
+                "serie": "OFR FSI:Credit", "rotulo": "Estresse de crédito OFR (proxy)",
+                "unidade": " índice", "proxy_para": FRED["hy_spread"][0],
+                "ultima_data": str(series.index.max().date())}}
+    except Exception as exc:
+        return {}, {"hy_spread": {"ok": False, "fonte": "OFR FSI direto",
+                    "serie": "OFR FSI:Credit", "rotulo": "Estresse de crédito OFR (proxy)",
+                    "erro": str(exc)[:180]}}
 
 
 def load_onchain() -> pd.DataFrame:
@@ -505,13 +753,20 @@ def build(years: int) -> dict:
                            "valor": safe_number(value), "sinal": bool(value >= .5),
                            "descricao": "Sinaliza recessão quando alcança 0,50 pp."})
 
+    claims_state = fred_status.get("claims", {})
+    credit_state = fred_status.get("hy_spread", {})
+    nfci_state = fred_status.get("nfci", {})
     indicators = []
     for args in [
         (fred, "cpi", "CPI", " índice", 2), (fred, "core_cpi", "Core CPI", " índice", 2),
         (fred, "unemployment", "Desemprego", "%", 2), (fred, "payroll", "Payroll", " mil", 0),
-        (fred, "jolts", "Vagas JOLTS", " mil", 0), (fred, "claims", "Claims", "", 0),
+        (fred, "jolts", "Vagas JOLTS", " mil", 0),
+        (fred, "claims", claims_state.get("rotulo", "Claims"), claims_state.get("unidade", ""), 0),
         (fred, "dgs10", "Treasury 10 anos", "%", 2), (fred, "dgs3m", "Treasury 3 meses", "%", 2),
-        (fred, "hy_spread", "Spread high yield", "%", 2), (fred, "nfci", "Condições financeiras", "", 2),
+        (fred, "hy_spread", credit_state.get("rotulo", "Spread high yield"),
+         credit_state.get("unidade", "%"), 2),
+        (fred, "nfci", nfci_state.get("rotulo", "Condições financeiras"),
+         nfci_state.get("unidade", ""), 2),
         (markets, "vix", "VIX", "", 2), (markets, "btc", "Bitcoin", " US$", 0),
         (markets, "sp500", "S&P 500", "", 0), (markets, "nasdaq", "Nasdaq", "", 0),
     ]:

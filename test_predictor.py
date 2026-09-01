@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -48,6 +49,71 @@ class PredictorTests(unittest.TestCase):
             predictor.atomic_json(path, {"ok": True, "valor": 1})
             self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["valor"], 1)
             self.assertFalse(list(path.parent.glob("*.tmp")))
+
+    def test_primary_series_prevents_fallback_request(self):
+        out = {"nfci": pd.Series([0.1], index=[pd.Timestamp("2026-01-01")])}
+        status = {"nfci": {"ok": True, "fonte": "FRED"}}
+        fetcher = mock.Mock()
+        predictor._apply_fallback(out, status, ["nfci"], fetcher)
+        fetcher.assert_not_called()
+        self.assertEqual(status["nfci"]["fonte"], "FRED")
+
+    def test_partial_fallback_keeps_other_failure_isolated(self):
+        out = {}
+        status = {
+            "claims": {"ok": False, "fonte": "FRED", "erro": "timeout claims"},
+            "nfci": {"ok": False, "fonte": "FRED", "erro": "timeout nfci"},
+        }
+
+        def partial(keys):
+            self.assertEqual(keys, ["claims", "nfci"])
+            series = pd.Series([210000.0], index=[pd.Timestamp("2026-08-29")])
+            return {"claims": series}, {
+                "claims": {"ok": True, "fonte": "DOL", "serie": "ETA 539"},
+                "nfci": {"ok": False, "fonte": "Chicago Fed", "erro": "indisponível"},
+            }
+
+        predictor._apply_fallback(out, status, ["claims", "nfci"], partial)
+        self.assertIn("claims", out)
+        self.assertTrue(status["claims"]["fallback"])
+        self.assertNotIn("nfci", out)
+        self.assertIn("timeout nfci", status["nfci"]["erro"])
+        self.assertIn("indisponível", status["nfci"]["erro"])
+
+    def test_treasury_xml_parser_normalizes_fields(self):
+        xml = """<feed xmlns='http://www.w3.org/2005/Atom'
+          xmlns:m='http://schemas.microsoft.com/ado/2007/08/dataservices/metadata'
+          xmlns:d='http://schemas.microsoft.com/ado/2007/08/dataservices'>
+          <entry><content><m:properties><d:NEW_DATE>2026-08-31T00:00:00</d:NEW_DATE>
+          <d:BC_10YEAR>4.25</d:BC_10YEAR><d:BC_3MONTH>5.10</d:BC_3MONTH>
+          </m:properties></content></entry></feed>"""
+        rows = predictor._parse_treasury_xml(xml, {"dgs10": "BC_10YEAR", "dgs3m": "BC_3MONTH"})
+        self.assertEqual(rows["dgs10"][0][1], 4.25)
+        self.assertEqual(rows["dgs3m"][0][0], pd.Timestamp("2026-08-31"))
+
+    def test_bea_rows_parser_handles_monthly_and_quarterly_periods(self):
+        monthly = predictor._parse_bea_rows([{
+            "LineDescription": "Personal consumption expenditures",
+            "TimePeriod": "2026M07", "DataValue": "125.40",
+        }], "pce_price")
+        quarterly = predictor._parse_bea_rows([{
+            "LineDescription": "Gross domestic product",
+            "TimePeriod": "2026Q2", "DataValue": "23,456.7",
+        }], "real_gdp")
+        self.assertEqual(monthly.index[0], pd.Timestamp("2026-07-01"))
+        self.assertEqual(quarterly.index[0], pd.Timestamp("2026-04-01"))
+        self.assertEqual(quarterly.iloc[0], 23456.7)
+
+    def test_dol_claims_parser_uses_seasonally_adjusted_national_value(self):
+        response = mock.Mock()
+        response.text = """<r539cyNational><week><weekEnded>08/29/2026</weekEnded>
+          <InitialClaims><NSA>198,000</NSA><SA>231,000</SA></InitialClaims>
+          </week></r539cyNational>"""
+        response.raise_for_status.return_value = None
+        with mock.patch.object(predictor.requests, "post", return_value=response):
+            out, status = predictor.fetch_claims_direct(["claims"])
+        self.assertEqual(out["claims"].iloc[0], 231000.0)
+        self.assertTrue(status["claims"]["ok"])
 
 
 if __name__ == "__main__":
