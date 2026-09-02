@@ -36,6 +36,7 @@ ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
 OUTPUT = WEB / "predictor.json"
 HISTORY = ROOT / "predictor_history.csv"
+LOCAL_DASHBOARD_URL = "http://127.0.0.1:8765/"
 UA = {"User-Agent": "btc-macro-dashboard/1.0 public research"}
 
 MARKETS = {
@@ -1332,6 +1333,11 @@ def build(years: int) -> dict:
         "fontes": {"mercado": market_status, "macro": fred_status},
         "governanca_dados": governance_summary, "avisos": warnings,
         "falhas": failed,
+        "operacao": {
+            "sincronizacao_local": "Execute sincronizar-painel.bat após ligar o computador.",
+            "painel_local": LOCAL_DASHBOARD_URL,
+            "politica_git": "Somente fast-forward de origin/main com árvore de trabalho limpa.",
+        },
         "metodologia": {
             "validacao": "Divisão cronológica 55% treino, 23% calibração isotônica e 22% teste.",
             "ensemble": "Regressão logística regularizada + gradient boosting.",

@@ -293,6 +293,20 @@ class PredictorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+    def test_local_sync_is_fast_forward_only_and_preserves_loopback_server(self):
+        root = Path(__file__).parent
+        script = (root / "sincronizar-painel.ps1").read_text(encoding="utf-8")
+        wrapper = (root / "sincronizar-painel.bat").read_text(encoding="utf-8")
+        server = (root / "serve.py").read_text(encoding="utf-8")
+        self.assertIn("git status --porcelain", script)
+        self.assertIn("git fetch --prune origin main", script)
+        self.assertIn("git merge-base --is-ancestor HEAD origin/main", script)
+        self.assertIn("git merge --ff-only origin/main", script)
+        self.assertNotIn("reset --hard", script)
+        self.assertIn("sincronizar-painel.ps1", wrapper)
+        self.assertIn('HOST = "127.0.0.1"', server)
+        self.assertIn('default=8765', server)
+
 
 if __name__ == "__main__":
     unittest.main()
