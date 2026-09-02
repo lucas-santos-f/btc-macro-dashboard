@@ -75,6 +75,30 @@
           <div id="indicatorGrid" class="indicator-grid"></div>
         </div>
       </section>
+      <section class="predict-section split-section history-section">
+        <div>
+          <h3>Cenários estatísticos</h3>
+          <div id="scenarioGrid" class="scenario-grid"></div>
+        </div>
+        <div>
+          <h3>Episódios históricos similares</h3>
+          <div id="similarEpisodes"></div>
+        </div>
+      </section>
+      <section class="predict-section chart-grid">
+        <article class="chart-card">
+          <label for="calibrationSelect">Curva de calibração</label>
+          <select id="calibrationSelect" aria-label="Escolha a previsão para a curva de calibração"></select>
+          <div id="calibrationChart" class="predict-chart" role="img" aria-label="Probabilidade prevista comparada à frequência observada"></div>
+          <p id="calibrationSummary" class="chart-summary"></p>
+        </article>
+        <article class="chart-card">
+          <label for="historySelect">Histórico de previsões</label>
+          <select id="historySelect" aria-label="Escolha a previsão para o histórico"></select>
+          <div id="historyChart" class="predict-chart" role="img" aria-label="Evolução histórica da probabilidade"></div>
+          <p id="historySummary" class="chart-summary"></p>
+        </article>
+      </section>
       <section class="predict-section">
         <h3>Qualidade e metodologia</h3>
         <div id="methodology"></div>

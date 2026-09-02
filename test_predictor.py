@@ -191,6 +191,49 @@ class PredictorTests(unittest.TestCase):
         self.assertTrue(next(x for x in cycles if x["id"] == "halving_420000")["completo_desde_halving"])
 
 
+    def test_similar_episodes_reserve_future_horizon_and_separate_matches(self):
+        index = pd.date_range("2000-01-01", periods=180, freq="MS")
+        wave = np.sin(np.arange(len(index)) / 8)
+        features = pd.DataFrame({"a": wave, "b": np.cos(np.arange(len(index)) / 9)}, index=index)
+        recession = pd.Series(0.0, index=index)
+        markets = pd.DataFrame({
+            "sp500": np.linspace(100, 300, len(index)),
+            "btc": np.linspace(10, 500, len(index)),
+        }, index=index)
+        rows = predictor.find_similar_episodes(features, recession, markets, limit=4,
+                                               separation_months=12)
+        self.assertGreaterEqual(len(rows), 2)
+        latest_allowed = index[-1] - pd.DateOffset(months=12)
+        self.assertTrue(all(pd.Timestamp(row["data"]) <= latest_allowed for row in rows))
+        periods = [pd.Timestamp(row["data"]).to_period("M") for row in rows]
+        for left, right in zip(periods, periods[1:]):
+            self.assertGreaterEqual(abs((left - right).n), 12)
+
+    def test_statistical_scenarios_use_existing_interval_bounds(self):
+        forecasts = [{
+            "id": "recessao_12m", "titulo": "Recessão", "horizonte": "12 meses",
+            "status": "ok", "probabilidade": .30, "intervalo": [.20, .45],
+        }]
+        scenarios = predictor.build_statistical_scenarios(forecasts)
+        self.assertEqual(scenarios[0]["previsoes"]["recessao_12m"]["probabilidade"], .20)
+        self.assertEqual(scenarios[1]["previsoes"]["recessao_12m"]["probabilidade"], .30)
+        self.assertEqual(scenarios[2]["previsoes"]["recessao_12m"]["probabilidade"], .45)
+        self.assertEqual(scenarios[0]["tipo"], "faixa_estatistica")
+
+    def test_prediction_history_is_sorted_and_bounded(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "history.csv"
+            pd.DataFrame([
+                {"gerado_em": "2026-01-03T00:00:00Z", "x": .3},
+                {"gerado_em": "2026-01-01T00:00:00Z", "x": .1},
+                {"gerado_em": "2026-01-02T00:00:00Z", "x": .2},
+            ]).to_csv(path, index=False)
+            history = predictor.load_prediction_history(path, {"x": "Teste"}, limit=2)
+        points = history["series"][0]["pontos"]
+        self.assertEqual([point["probabilidade"] for point in points], [.2, .3])
+        self.assertEqual(history["series"][0]["titulo"], "Teste")
+
+
 
 if __name__ == "__main__":
     unittest.main()

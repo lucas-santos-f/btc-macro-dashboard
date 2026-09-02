@@ -946,6 +946,123 @@ def build_historical_benchmarks(monthly: pd.DataFrame, markets: pd.DataFrame) ->
     }
 
 
+
+def find_similar_episodes(features: pd.DataFrame, recession: pd.Series,
+                          markets: pd.DataFrame, limit: int = 5,
+                          separation_months: int = 12) -> list[dict]:
+    """Localiza estados macro passados, reservando horizonte para observar o desfecho."""
+    frame = features.replace([np.inf, -np.inf], np.nan).sort_index()
+    valid_current = frame.loc[frame.notna().sum(axis=1).gt(0)]
+    if valid_current.empty:
+        return []
+    current_date = valid_current.index[-1]
+    current = valid_current.iloc[-1]
+    usable = [
+        column for column in frame.columns
+        if pd.notna(current.get(column)) and frame[column].notna().sum() >= 60
+    ]
+    if len(usable) < 2:
+        return []
+    history_end = current_date - pd.DateOffset(months=12)
+    history = frame.loc[frame.index <= history_end, usable]
+    history = history.loc[history.notna().sum(axis=1) >= max(2, len(usable) // 2)]
+    if history.empty:
+        return []
+    median = history.median()
+    scale = history.std().replace(0, np.nan)
+    standardized = (history.fillna(median) - median) / scale
+    current_z = (current[usable].fillna(median) - median) / scale
+    distances = ((standardized - current_z) ** 2).mean(axis=1).pow(.5).dropna().sort_values()
+
+    recession_outcome = future_any(recession.reindex(frame.index).fillna(0), 12)
+    monthly_market = markets.resample("MS").last().reindex(frame.index).ffill()
+    selected = []
+    for date, distance in distances.items():
+        if any(abs((date.to_period("M") - pd.Timestamp(item["data"]).to_period("M")).n)
+               < separation_months for item in selected):
+            continue
+        outcomes = {"recessao_12m": None, "sp500_6m": None, "btc_6m": None}
+        if date in recession_outcome.index and pd.notna(recession_outcome.loc[date]):
+            outcomes["recessao_12m"] = bool(recession_outcome.loc[date])
+        for key, result_key in (("sp500", "sp500_6m"), ("btc", "btc_6m")):
+            if key in monthly_market and date in monthly_market.index:
+                start_value = monthly_market.loc[date, key]
+                future_date = date + pd.DateOffset(months=6)
+                if future_date in monthly_market.index:
+                    future_value = monthly_market.loc[future_date, key]
+                    if pd.notna(start_value) and pd.notna(future_value) and start_value != 0:
+                        outcomes[result_key] = safe_number(future_value / start_value - 1)
+        selected.append({
+            "data": str(date.date()), "distancia": safe_number(distance),
+            "similaridade": safe_number(1 / (1 + distance)),
+            "variaveis_comparadas": int(history.loc[date].notna().sum()),
+            "desfecho_observado": outcomes,
+            "nota": "Similaridade padronizada; seleção usa apenas datas anteriores ao horizonte reservado.",
+        })
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def build_statistical_scenarios(forecasts: list[dict]) -> list[dict]:
+    """Transforma intervalos já calculados em cenários, sem criar premissas externas."""
+    usable = [item for item in forecasts if item.get("status") == "ok" and item.get("intervalo")]
+    preferred = ["recessao_12m", "sp_stress_90d", "btc_alta_60d"]
+    chosen = [next((item for item in usable if item["id"] == key), None) for key in preferred]
+    chosen = [item for item in chosen if item is not None]
+    if not chosen:
+        chosen = usable[:3]
+    definitions = [
+        ("limite_inferior", "Limite inferior", 0,
+         "Limite inferior do intervalo estatístico de cada previsão."),
+        ("central", "Estimativa central", None,
+         "Probabilidade central calibrada pelo backtest walk-forward."),
+        ("limite_superior", "Limite superior", 1,
+         "Limite superior do intervalo estatístico de cada previsão."),
+    ]
+    scenarios = []
+    for scenario_id, name, bound, assumption in definitions:
+        values = {}
+        for item in chosen:
+            probability = item["probabilidade"] if bound is None else item["intervalo"][bound]
+            values[item["id"]] = {
+                "titulo": item["titulo"], "horizonte": item["horizonte"],
+                "probabilidade": probability,
+            }
+        scenarios.append({
+            "id": scenario_id, "nome": name, "tipo": "faixa_estatistica",
+            "premissa": assumption, "previsoes": values,
+            "limitacao": "Não representa consenso nem cenário causal; apenas a incerteza estimada do modelo.",
+        })
+    return scenarios
+
+
+def load_prediction_history(path: Path = HISTORY, forecast_titles: dict | None = None,
+                            limit: int = 120) -> dict:
+    if not path.exists():
+        return {"series": [], "observacoes": 0}
+    try:
+        frame = pd.read_csv(path)
+        if "gerado_em" not in frame:
+            return {"series": [], "observacoes": 0}
+        frame["gerado_em"] = pd.to_datetime(frame["gerado_em"], errors="coerce", utc=True)
+        frame = frame.dropna(subset=["gerado_em"]).sort_values("gerado_em").tail(limit)
+        titles = forecast_titles or {}
+        series = []
+        for column in frame.columns:
+            if column == "gerado_em" or column == "snapshot_id":
+                continue
+            points = []
+            for date, value in zip(frame["gerado_em"], pd.to_numeric(frame[column], errors="coerce")):
+                if pd.notna(value):
+                    points.append({"data": date.isoformat(), "probabilidade": safe_number(value)})
+            if points:
+                series.append({"id": column, "titulo": titles.get(column, column), "pontos": points})
+        return {"series": series, "observacoes": int(len(frame)), "limite": limit}
+    except Exception as exc:
+        return {"series": [], "observacoes": 0, "erro": str(exc)[:180]}
+
+
 def append_snapshot(payload: dict) -> None:
     row = {"gerado_em": payload["gerado_em"]}
     for item in payload["previsoes"]:
@@ -1071,14 +1188,17 @@ def build(years: int) -> dict:
     warnings.append("Probabilidades são estimativas estatísticas, não recomendação de investimento.")
     warnings.append("Dados macro revisados são defasados em um mês; benchmarks em tempo real são identificados separadamente.")
     historical_benchmarks = build_historical_benchmarks(monthly, markets)
+    similar_episodes = find_similar_episodes(monthly, recession, markets)
+    scenarios = build_statistical_scenarios(forecasts)
     payload = {
-        "versao": 2, "gerado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "versao": 3, "gerado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "cobertura": {"fontes_ok": ok_sources, "fontes_total": all_sources,
                       "mercado_inicio": str(markets.index.min().date()), "mercado_fim": str(markets.index.max().date()),
                       "macro_inicio": str(fred.index.min().date()) if not fred.empty else None,
                       "macro_fim": str(fred.index.max().date()) if not fred.empty else None},
         "previsoes": forecasts, "benchmarks": benchmarks, "indicadores": indicators,
         "comparacoes_historicas": historical_benchmarks,
+        "episodios_similares": similar_episodes, "cenarios": scenarios,
         "fontes": {"mercado": market_status, "macro": fred_status}, "avisos": warnings,
         "falhas": failed,
         "metodologia": {
@@ -1099,8 +1219,10 @@ def main() -> int:
     args = parser.parse_args()
     try:
         payload = build(max(5, args.anos_mercado))
-        atomic_json(OUTPUT, payload)
         append_snapshot(payload)
+        titles = {item["id"]: item["titulo"] for item in payload["previsoes"]}
+        payload["historico_previsoes"] = load_prediction_history(HISTORY, titles)
+        atomic_json(OUTPUT, payload)
         ok = sum(1 for x in payload["previsoes"] if x.get("status") == "ok")
         print(f"OK: {ok}/{len(payload['previsoes'])} previsões válidas -> {OUTPUT}")
         return 0

@@ -46,12 +46,96 @@
     </article>`;
   }
 
+
+  const chartLayout = (xTitle, yTitle) => ({
+    margin: {l: 48, r: 16, t: 18, b: 42},
+    paper_bgcolor: "transparent", plot_bgcolor: "transparent",
+    font: {color: "#8b949e", size: 11},
+    xaxis: {title: xTitle, gridcolor: "#21262d", zerolinecolor: "#30363d"},
+    yaxis: {title: yTitle, gridcolor: "#21262d", zerolinecolor: "#30363d", range: [0, 1]},
+    showlegend: true, legend: {orientation: "h", y: 1.15},
+  });
+  const chartConfig = {responsive: true, displayModeBar: false};
+
+  function renderScenarios(data) {
+    const scenarios = data.cenarios || [];
+    el("scenarioGrid").innerHTML = scenarios.length ? scenarios.map(scenario => {
+      const rows = Object.values(scenario.previsoes || {}).map(item =>
+        `<li><span>${escapeHtml(item.titulo)} · ${escapeHtml(item.horizonte)}</span><b>${pct(item.probabilidade)}</b></li>`).join("");
+      return `<article class="scenario-card"><strong>${escapeHtml(scenario.nome)}</strong>
+        <p>${escapeHtml(scenario.premissa)}</p><ul>${rows}</ul>
+        <small>${escapeHtml(scenario.limitacao)}</small></article>`;
+    }).join("") : `<p class="empty-state">Sem intervalos suficientes para cenários.</p>`;
+  }
+
+  function renderSimilarEpisodes(data) {
+    const episodes = data.episodios_similares || [];
+    el("similarEpisodes").innerHTML = episodes.length ? episodes.map(item => {
+      const outcome = item.desfecho_observado || {};
+      return `<article class="episode-row">
+        <div><strong>${escapeHtml(item.data)}</strong><small>similaridade ${pct(item.similaridade)}</small></div>
+        <div><span>Recessão 12m: ${outcome.recessao_12m == null ? "—" : outcome.recessao_12m ? "sim" : "não"}</span>
+        <span>S&P 6m: ${outcome.sp500_6m == null ? "—" : pct(outcome.sp500_6m)}</span>
+        <span>BTC 6m: ${outcome.btc_6m == null ? "—" : pct(outcome.btc_6m)}</span></div>
+      </article>`;
+    }).join("") : `<p class="empty-state">Cobertura insuficiente para localizar episódios comparáveis.</p>`;
+  }
+
+  function renderCalibration(forecastId) {
+    const item = (payload?.previsoes || []).find(row => row.id === forecastId);
+    const points = item?.calibracao || [];
+    if (!points.length) {
+      Plotly.purge(el("calibrationChart"));
+      el("calibrationSummary").textContent = "Sem pontos fora da amostra suficientes.";
+      return;
+    }
+    Plotly.newPlot(el("calibrationChart"), [
+      {x: [0, 1], y: [0, 1], mode: "lines", name: "calibração perfeita",
+       line: {color: "#565f6b", dash: "dot"}},
+      {x: points.map(row => row.previsto), y: points.map(row => row.observado),
+       mode: "lines+markers", name: "observado", line: {color: "#F7931A"}},
+    ], chartLayout("Probabilidade prevista", "Frequência observada"), chartConfig);
+    el("calibrationSummary").textContent =
+      `${item.titulo} · ${points.length} faixas · ${item.metricas?.amostras_teste || 0} previsões fora da amostra.`;
+  }
+
+  function renderHistory(seriesId) {
+    const series = (payload?.historico_previsoes?.series || []).find(row => row.id === seriesId);
+    const points = series?.pontos || [];
+    if (!points.length) {
+      Plotly.purge(el("historyChart"));
+      el("historySummary").textContent = "O histórico será preenchido nas próximas execuções válidas.";
+      return;
+    }
+    Plotly.newPlot(el("historyChart"), [{
+      x: points.map(row => row.data), y: points.map(row => row.probabilidade),
+      mode: "lines+markers", name: series.titulo, line: {color: "#58a6ff"},
+    }], chartLayout("Execução", "Probabilidade"), chartConfig);
+    el("historySummary").textContent = `${series.titulo} · ${points.length} registros persistidos.`;
+  }
+
+  function setupCharts(data) {
+    const calibrated = (data.previsoes || []).filter(item => (item.calibracao || []).length);
+    el("calibrationSelect").innerHTML = calibrated.map(item =>
+      `<option value="${escapeHtml(item.id)}">${escapeHtml(item.titulo)} · ${escapeHtml(item.horizonte)}</option>`).join("");
+    const history = data.historico_previsoes?.series || [];
+    el("historySelect").innerHTML = history.map(item =>
+      `<option value="${escapeHtml(item.id)}">${escapeHtml(item.titulo)}</option>`).join("");
+    el("calibrationSelect").onchange = event => renderCalibration(event.target.value);
+    el("historySelect").onchange = event => renderHistory(event.target.value);
+    renderCalibration(calibrated[0]?.id);
+    renderHistory(history[0]?.id);
+  }
+
   function render(data) {
     payload = data;
     const generated = new Date(data.gerado_em).toLocaleString("pt-BR");
     el("predictMeta").textContent = `Atualizado em ${generated} · ${data.cobertura.fontes_ok}/${data.cobertura.fontes_total} fontes · mercado ${data.cobertura.mercado_inicio}–${data.cobertura.mercado_fim}`;
     el("predictWarnings").innerHTML = (data.avisos || []).map(text => `<div class="predict-warning">${escapeHtml(text)}</div>`).join("");
     el("forecastCards").innerHTML = data.previsoes.map(renderForecast).join("");
+    renderScenarios(data);
+    renderSimilarEpisodes(data);
+    setupCharts(data);
     el("benchmarkList").innerHTML = data.benchmarks.map(item => `<article class="benchmark-row">
       <div><strong>${escapeHtml(item.nome)}</strong><small>${escapeHtml(item.horizonte)}</small></div>
       <b>${item.probabilidade != null ? pct(item.probabilidade) : item.valor != null ? num(item.valor) : item.status === "dados_insuficientes" ? "amostra insuficiente" : "—"}</b>
@@ -76,6 +160,9 @@
         probabilidade:x.probabilidade, intervalo:x.intervalo, metricas:x.metricas,
         fatores:(x.drivers || []).slice(0, 5)})),
       benchmarks: payload.benchmarks,
+      cenarios: payload.cenarios,
+      episodios_similares: payload.episodios_similares,
+      comparacoes_historicas: payload.comparacoes_historicas,
       indicadores: payload.indicadores,
       avisos: payload.avisos,
     };
