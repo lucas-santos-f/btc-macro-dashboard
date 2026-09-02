@@ -37,6 +37,11 @@ WEB = ROOT / "web"
 OUTPUT = WEB / "predictor.json"
 HISTORY = ROOT / "predictor_history.csv"
 LOCAL_DASHBOARD_URL = "http://127.0.0.1:8765/"
+PREDICTOR_SCHEMA_VERSION = 4
+MODEL_VALIDATION_DESCRIPTION = (
+    "Walk-forward repetido com janelas expansivas; em cada dobra, treino, calibração isotônica "
+    "e teste são blocos contíguos, posteriores e sem sobreposição."
+)
 UA = {"User-Agent": "btc-macro-dashboard/1.0 public research"}
 
 MARKETS = {
@@ -1322,7 +1327,7 @@ def build(years: int) -> dict:
     similar_episodes = find_similar_episodes(monthly, recession, markets)
     scenarios = build_statistical_scenarios(forecasts)
     payload = {
-        "versao": 3, "gerado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "versao": PREDICTOR_SCHEMA_VERSION, "gerado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "cobertura": {"fontes_ok": ok_sources, "fontes_total": all_sources,
                       "mercado_inicio": str(markets.index.min().date()), "mercado_fim": str(markets.index.max().date()),
                       "macro_inicio": str(fred.index.min().date()) if not fred.empty else None,
@@ -1339,7 +1344,7 @@ def build(years: int) -> dict:
             "politica_git": "Somente fast-forward de origin/main com árvore de trabalho limpa.",
         },
         "metodologia": {
-            "validacao": "Divisão cronológica 55% treino, 23% calibração isotônica e 22% teste.",
+            "validacao": MODEL_VALIDATION_DESCRIPTION,
             "ensemble": "Regressão logística regularizada + gradient boosting.",
             "anti_vazamento": "Variáveis macro deslocadas um mês; nenhuma divisão aleatória.",
             "revisoes": "Períodos de referência validados; vintage histórico indisponível é declarado e mitigado por defasagem conservadora.",

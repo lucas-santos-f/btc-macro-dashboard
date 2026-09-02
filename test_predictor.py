@@ -307,6 +307,13 @@ class PredictorTests(unittest.TestCase):
         self.assertIn('HOST = "127.0.0.1"', server)
         self.assertIn('default=8765', server)
 
+    def test_schema_version_and_validation_description_match_current_model(self):
+        self.assertEqual(predictor.PREDICTOR_SCHEMA_VERSION, 4)
+        self.assertIn("Walk-forward repetido", predictor.MODEL_VALIDATION_DESCRIPTION)
+        self.assertIn("janelas expansivas", predictor.MODEL_VALIDATION_DESCRIPTION)
+        self.assertIn("sem sobreposição", predictor.MODEL_VALIDATION_DESCRIPTION)
+        self.assertEqual(predictor.LOCAL_DASHBOARD_URL, "http://127.0.0.1:8765/")
+
 
 if __name__ == "__main__":
     unittest.main()
