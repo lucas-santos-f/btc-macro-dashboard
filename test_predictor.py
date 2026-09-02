@@ -115,6 +115,48 @@ class PredictorTests(unittest.TestCase):
         self.assertEqual(out["claims"].iloc[0], 231000.0)
         self.assertTrue(status["claims"]["ok"])
 
+    def test_walk_forward_splits_are_strictly_temporal_and_non_overlapping(self):
+        splits = predictor.temporal_walk_forward_splits(
+            800, min_train=300, max_folds=5, calibration_size=60, test_size=60
+        )
+        self.assertGreaterEqual(len(splits), 3)
+        previous_test_end = 0
+        for train_end, calibration_end, test_end in splits:
+            self.assertLess(train_end, calibration_end)
+            self.assertLess(calibration_end, test_end)
+            self.assertGreaterEqual(calibration_end, previous_test_end)
+            previous_test_end = test_end
+
+    def test_fit_forecast_reports_repeated_walk_forward(self):
+        rng = np.random.default_rng(7)
+        index = pd.date_range("2010-01-01", periods=1000, freq="D")
+        signal = rng.normal(size=len(index))
+        features = pd.DataFrame({
+            "signal": signal,
+            "lagged": pd.Series(signal).shift(1).to_numpy(),
+        }, index=index)
+        target = pd.Series((signal + rng.normal(scale=1.2, size=len(index)) > .35).astype(float),
+                           index=index)
+        result = predictor.fit_forecast(features, target, min_samples=350)
+        self.assertEqual(result["status"], "ok")
+        self.assertGreaterEqual(result["walk_forward"]["dobras_validas"], 2)
+        dates = [row["data"] for row in result["historico_teste"]]
+        self.assertEqual(dates, sorted(set(dates)))
+        self.assertLess(
+            result["walk_forward"]["dobras"][0]["treino_fim"],
+            result["walk_forward"]["dobras"][0]["calibracao_inicio"],
+        )
+
+    def test_rare_event_without_temporal_support_is_explicit(self):
+        index = pd.date_range("2015-01-01", periods=500, freq="D")
+        features = pd.DataFrame({"x": np.linspace(-1, 1, len(index))}, index=index)
+        target = pd.Series(np.r_[np.zeros(494), np.ones(6)], index=index)
+        result = predictor.fit_forecast(features, target, min_samples=200)
+        self.assertEqual(result["status"], "dados_insuficientes")
+        self.assertTrue(result["eventos_raros"]["detectado"])
+        self.assertIn("minoritária", result["motivo"])
+
+
 
 if __name__ == "__main__":
     unittest.main()

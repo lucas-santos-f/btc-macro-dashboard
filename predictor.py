@@ -575,63 +575,196 @@ def _models() -> tuple[Pipeline, Pipeline]:
     return logistic, boost
 
 
-def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> dict:
-    frame = features.copy()
-    y = target.reindex(frame.index)
-    valid = y.notna() & frame.notna().sum(axis=1).gt(0)
-    frame, y = frame.loc[valid], y.loc[valid].astype(int)
-    if len(frame) < min_samples or y.nunique() < 2 or y.sum() < 8:
-        return {"status": "dados_insuficientes", "amostras": int(len(frame)),
-                "eventos": int(y.sum()) if len(y) else 0}
-    n = len(frame)
-    a, b = max(int(n * .55), 60), max(int(n * .78), 90)
-    if b >= n - 15:
-        b = n - 15
-    train_x, train_y = frame.iloc[:a], y.iloc[:a]
-    cal_x, cal_y = frame.iloc[a:b], y.iloc[a:b]
-    test_x, test_y = frame.iloc[b:], y.iloc[b:]
+def temporal_walk_forward_splits(n: int, min_train: int, max_folds: int = 5,
+                                 calibration_size: int | None = None,
+                                 test_size: int | None = None) -> list[tuple[int, int, int]]:
+    """Cria dobras expansivas treino/calibração/teste, todas contíguas e sem sobreposição."""
+    if n <= min_train:
+        return []
+    calibration_size = calibration_size or max(12, min(90, n // 10))
+    test_size = test_size or max(12, min(90, n // 10))
+    possible = (n - min_train - calibration_size) // test_size
+    folds = min(max_folds, max(0, possible))
+    if folds == 0:
+        return []
+    first_test = n - folds * test_size
+    result = []
+    for fold in range(folds):
+        calibration_end = first_test + fold * test_size
+        train_end = calibration_end - calibration_size
+        test_end = min(calibration_end + test_size, n)
+        if train_end >= min_train and calibration_end < test_end:
+            result.append((train_end, calibration_end, test_end))
+    return result
+
+
+def _rare_event_summary(y: pd.Series) -> dict:
+    positives = int(y.sum()) if len(y) else 0
+    negatives = int(len(y) - positives)
+    rate = float(positives / len(y)) if len(y) else 0.0
+    return {
+        "detectado": bool(len(y) and (positives < 30 or rate < .10)),
+        "eventos": positives,
+        "nao_eventos": negatives,
+        "taxa": safe_number(rate),
+        "tratamento": (
+            "Pesos inversos de classe no boosting, regressão logística balanceada, "
+            "calibração somente em janela posterior ao treino e retração à taxa-base."
+        ),
+    }
+
+
+def _balanced_sample_weight(y: pd.Series) -> np.ndarray:
+    counts = y.value_counts()
+    return y.map({label: len(y) / (2 * count) for label, count in counts.items()}).to_numpy(float)
+
+
+def _fit_temporal_models(train_x: pd.DataFrame, train_y: pd.Series,
+                         calibration_x: pd.DataFrame, calibration_y: pd.Series):
     usable = train_x.columns[train_x.notna().any(axis=0)]
-    train_x, cal_x, test_x = train_x[usable], cal_x[usable], test_x[usable]
-    frame = frame[usable]
-    if min(train_y.nunique(), cal_y.nunique(), test_y.nunique()) < 2:
-        return {"status": "dados_insuficientes", "amostras": int(n), "eventos": int(y.sum()),
-                "motivo": "divisão temporal sem as duas classes"}
+    if len(usable) == 0:
+        raise ValueError("treino sem variável utilizável")
+    train_x = train_x[usable]
+    calibration_x = calibration_x[usable]
+    if train_y.nunique() < 2 or calibration_y.nunique() < 2:
+        raise ValueError("treino ou calibração temporal sem as duas classes")
+    if min(train_y.value_counts()) < 4:
+        raise ValueError("treino com menos de quatro exemplos em uma classe")
     logit, boost = _models()
     logit.fit(train_x, train_y)
-    boost.fit(train_x, train_y)
-    raw_cal = (logit.predict_proba(cal_x)[:, 1] + boost.predict_proba(cal_x)[:, 1]) / 2
-    # Limites conservadores evitam probabilidades de 0%/100% em amostras finitas.
-    calibrator = IsotonicRegression(out_of_bounds="clip", y_min=.02, y_max=.98)
-    calibrator.fit(raw_cal, cal_y)
-    raw_test = (logit.predict_proba(test_x)[:, 1] + boost.predict_proba(test_x)[:, 1]) / 2
-    pred_test = calibrator.predict(raw_test)
-    current_x = frame.iloc[[-1]]
-    raw_current = (logit.predict_proba(current_x)[:, 1] + boost.predict_proba(current_x)[:, 1]) / 2
-    probability = float(calibrator.predict(raw_current)[0])
-    # Evita falsa precisão: modelos sem poder discriminatório retornam à taxa-base.
-    preliminary_auc = roc_auc_score(test_y, pred_test)
+    boost.fit(train_x, train_y, model__sample_weight=_balanced_sample_weight(train_y))
+    raw_calibration = (
+        logit.predict_proba(calibration_x)[:, 1]
+        + boost.predict_proba(calibration_x)[:, 1]
+    ) / 2
+    calibrator = IsotonicRegression(out_of_bounds="clip", y_min=.01, y_max=.99)
+    calibrator.fit(raw_calibration, calibration_y)
+    return logit, boost, calibrator, usable
+
+
+def _predict_ensemble(logit: Pipeline, boost: Pipeline, calibrator: IsotonicRegression,
+                      frame: pd.DataFrame) -> np.ndarray:
+    raw = (logit.predict_proba(frame)[:, 1] + boost.predict_proba(frame)[:, 1]) / 2
+    return np.asarray(calibrator.predict(raw), dtype=float)
+
+
+def _latest_temporal_partition(y: pd.Series, min_train: int, base_size: int) -> int | None:
+    """Retorna o início da calibração mais recente que ainda contém as duas classes."""
+    start = max(min_train, len(y) - base_size)
+    step = max(6, base_size // 2)
+    while start > min_train and y.iloc[start:].nunique() < 2:
+        start = max(min_train, start - step)
+    return start if start < len(y) and y.iloc[start:].nunique() == 2 else None
+
+
+def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> dict:
+    all_features = features.replace([np.inf, -np.inf], np.nan).copy()
+    y = target.reindex(all_features.index)
+    valid = y.notna() & all_features.notna().sum(axis=1).gt(0)
+    frame, y = all_features.loc[valid], y.loc[valid].astype(int)
+    rare = _rare_event_summary(y)
+    if len(frame) < min_samples or y.nunique() < 2 or min(rare["eventos"], rare["nao_eventos"]) < 8:
+        return {
+            "status": "dados_insuficientes", "amostras": int(len(frame)),
+            "eventos": rare["eventos"], "eventos_raros": rare,
+            "motivo": "amostra ou classe minoritária insuficiente para validação temporal",
+        }
+
+    splits = temporal_walk_forward_splits(len(frame), min_samples)
+    predictions, actuals, dates, fold_meta = [], [], [], []
+    for train_end, calibration_end, test_end in splits:
+        train_x, train_y = frame.iloc[:train_end], y.iloc[:train_end]
+        calibration_x = frame.iloc[train_end:calibration_end]
+        calibration_y = y.iloc[train_end:calibration_end]
+        test_x, test_y = frame.iloc[calibration_end:test_end], y.iloc[calibration_end:test_end]
+        try:
+            logit, boost, calibrator, usable = _fit_temporal_models(
+                train_x, train_y, calibration_x, calibration_y
+            )
+        except ValueError:
+            continue
+        fold_predictions = _predict_ensemble(logit, boost, calibrator, test_x[usable])
+        predictions.extend(fold_predictions.tolist())
+        actuals.extend(test_y.to_numpy(int).tolist())
+        dates.extend(test_x.index.tolist())
+        fold_meta.append({
+            "treino_inicio": str(train_x.index[0].date()),
+            "treino_fim": str(train_x.index[-1].date()),
+            "calibracao_inicio": str(calibration_x.index[0].date()),
+            "calibracao_fim": str(calibration_x.index[-1].date()),
+            "teste_inicio": str(test_x.index[0].date()),
+            "teste_fim": str(test_x.index[-1].date()),
+            "amostras_teste": int(len(test_x)),
+            "eventos_teste": int(test_y.sum()),
+        })
+
+    if len(fold_meta) < 2 or len(set(actuals)) < 2:
+        return {
+            "status": "dados_insuficientes", "amostras": int(len(frame)),
+            "eventos": rare["eventos"], "eventos_raros": rare,
+            "motivo": "menos de duas dobras temporais válidas com ambas as classes no conjunto agregado",
+            "walk_forward": {"dobras_validas": len(fold_meta), "dobras": fold_meta},
+        }
+
+    pred_oos = np.asarray(predictions, dtype=float)
+    actual_oos = np.asarray(actuals, dtype=int)
+    preliminary_auc = roc_auc_score(actual_oos, pred_oos)
     reliability = float(np.clip((preliminary_auc - .50) / .20, 0, 1))
-    base_rate = float(pd.concat([train_y, cal_y]).mean())
-    pred_test = reliability * pred_test + (1 - reliability) * base_rate
-    probability = reliability * probability + (1 - reliability) * base_rate
-    brier = brier_score_loss(test_y, pred_test)
+    base_rate = float(y.mean())
+    pred_oos = np.clip(reliability * pred_oos + (1 - reliability) * base_rate, .001, .999)
+
+    final_calibration_size = max(12, min(90, len(frame) // 10))
+    final_start = _latest_temporal_partition(y, min_samples, final_calibration_size)
+    if final_start is None:
+        return {
+            "status": "dados_insuficientes", "amostras": int(len(frame)),
+            "eventos": rare["eventos"], "eventos_raros": rare,
+            "motivo": "janela temporal final sem as duas classes para calibração",
+            "walk_forward": {"dobras_validas": len(fold_meta), "dobras": fold_meta},
+        }
+    final_train_x, final_train_y = frame.iloc[:final_start], y.iloc[:final_start]
+    final_calibration_x, final_calibration_y = frame.iloc[final_start:], y.iloc[final_start:]
+    try:
+        logit, boost, calibrator, usable = _fit_temporal_models(
+            final_train_x, final_train_y, final_calibration_x, final_calibration_y
+        )
+    except ValueError as exc:
+        return {
+            "status": "dados_insuficientes", "amostras": int(len(frame)),
+            "eventos": rare["eventos"], "eventos_raros": rare, "motivo": str(exc),
+            "walk_forward": {"dobras_validas": len(fold_meta), "dobras": fold_meta},
+        }
+
+    current_candidates = all_features.loc[all_features.notna().sum(axis=1).gt(0)]
+    if current_candidates.empty:
+        return {"status": "dados_insuficientes", "amostras": int(len(frame)),
+                "eventos": rare["eventos"], "eventos_raros": rare,
+                "motivo": "sem observação atual utilizável"}
+    current_x = current_candidates.iloc[[-1]][usable]
+    calibrated_current = float(_predict_ensemble(logit, boost, calibrator, current_x)[0])
+    probability = float(np.clip(
+        reliability * calibrated_current + (1 - reliability) * base_rate, .001, .999
+    ))
+
+    brier = brier_score_loss(actual_oos, pred_oos)
     metrics = {
         "brier": safe_number(brier),
-        "log_loss": safe_number(log_loss(test_y, pred_test, labels=[0, 1])),
-        "auc": safe_number(roc_auc_score(test_y, pred_test)),
-        "acuracia": safe_number(np.mean((pred_test >= .5) == test_y.to_numpy())),
+        "log_loss": safe_number(log_loss(actual_oos, pred_oos, labels=[0, 1])),
+        "auc": safe_number(roc_auc_score(actual_oos, pred_oos)),
+        "acuracia": safe_number(np.mean((pred_oos >= .5) == actual_oos)),
         "taxa_base": safe_number(base_rate), "confianca_modelo": safe_number(reliability),
-        "amostras_teste": int(len(test_y)), "amostras_total": int(n), "eventos": int(y.sum()),
+        "amostras_teste": int(len(actual_oos)), "amostras_total": int(len(frame)),
+        "eventos": rare["eventos"], "dobras": len(fold_meta),
     }
     auc = metrics["auc"] or 0
     quality = "alta" if auc >= .70 and brier <= .20 else "moderada" if auc >= .58 else "baixa"
-    observed, predicted = calibration_curve(test_y, pred_test, n_bins=min(8, max(3, len(test_y) // 25)), strategy="quantile")
+    bins = min(8, max(3, len(actual_oos) // 25))
+    observed, predicted = calibration_curve(actual_oos, pred_oos, n_bins=bins, strategy="quantile")
     calibration = [{"previsto": safe_number(p), "observado": safe_number(o)}
                    for p, o in zip(predicted, observed)]
-    error = min(.35, max(.05, 1.96 * math.sqrt(max(brier, .001) / max(len(test_y), 1))))
+    error = min(.35, max(.05, 1.96 * math.sqrt(max(brier, .001) / max(len(actual_oos), 1))))
 
-    # Contribuições do modelo linear na escala padronizada.
-    names = list(frame.columns)
+    names = list(usable)
     imputed = logit.named_steps["imputer"].transform(current_x)
     scaled = logit.named_steps["scale"].transform(imputed)[0]
     coef = logit.named_steps["model"].coef_[0]
@@ -639,14 +772,29 @@ def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> 
     order = np.argsort(np.abs(contributions))[::-1][:8]
     drivers = [{"nome": names[i], "impacto": safe_number(contributions[i]),
                 "direcao": "aumenta" if contributions[i] >= 0 else "reduz"} for i in order]
-    history = [{"data": str(date.date()), "probabilidade": safe_number(prob), "ocorreu": int(actual)}
-               for date, prob, actual in zip(test_x.index[-180:], pred_test[-180:], test_y.to_numpy()[-180:])]
+    history = [
+        {"data": str(pd.Timestamp(date).date()), "probabilidade": safe_number(prob), "ocorreu": int(actual)}
+        for date, prob, actual in zip(dates[-240:], pred_oos[-240:], actual_oos[-240:])
+    ]
     return {
-        "status": "ok", "probabilidade": safe_number(probability),
-        "qualidade": quality,
-        "intervalo": [safe_number(max(0, probability - error)), safe_number(min(1, probability + error))],
+        "status": "ok", "probabilidade": safe_number(probability), "qualidade": quality,
+        "intervalo": [safe_number(max(0, probability - error)),
+                      safe_number(min(1, probability + error))],
         "metricas": metrics, "calibracao": calibration, "drivers": drivers,
-        "historico_teste": history, "ultima_observacao": str(frame.index[-1].date()),
+        "historico_teste": history,
+        "ultima_observacao": str(current_candidates.index[-1].date()),
+        "eventos_raros": rare,
+        "walk_forward": {
+            "metodo": "janela expansiva; calibração e teste contíguos posteriores ao treino",
+            "dobras_validas": len(fold_meta), "dobras": fold_meta,
+            "previsoes_fora_amostra": int(len(actual_oos)),
+        },
+        "calibracao_temporal": {
+            "metodo": "isotônica",
+            "treino_fim": str(final_train_x.index[-1].date()),
+            "calibracao_inicio": str(final_calibration_x.index[0].date()),
+            "calibracao_fim": str(final_calibration_x.index[-1].date()),
+        },
     }
 
 
