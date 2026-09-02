@@ -17,6 +17,8 @@
       button.setAttribute("aria-pressed", String(button.dataset.view === name));
     });
     document.querySelector("header .controles").style.visibility = predictor ? "hidden" : "visible";
+    document.body.dataset.view = name;
+    if (predictor) el("preditorView").focus({preventScroll: true});
   }
 
   function metricLine(metrics) {
@@ -147,8 +149,10 @@
     el("methodology").innerHTML = Object.entries(data.metodologia).map(([key, value]) =>
       `<div class="method-row"><strong>${escapeHtml(key.replaceAll("_", " "))}</strong><span>${escapeHtml(value)}</span></div>`).join("");
     const sources = [...Object.entries(data.fontes.mercado), ...Object.entries(data.fontes.macro)];
-    el("sourceStatus").innerHTML = `<table class="source-table"><thead><tr><th>Série</th><th>Fonte</th><th>Estado</th><th>Última data</th></tr></thead><tbody>${sources.map(([key, source]) =>
-      `<tr><td>${escapeHtml(source.rotulo || key)}</td><td>${escapeHtml(source.fonte)}</td><td class="${source.ok ? "source-ok" : "source-fail"}">${source.ok ? "OK" : "Falhou"}</td><td>${escapeHtml(source.ultima_data || source.erro || "—")}</td></tr>`).join("")}</tbody></table>`;
+    el("sourceStatus").innerHTML = `<div class="source-table-wrap" role="region" aria-label="Estado e governança das fontes" tabindex="0"><table class="source-table"><thead><tr><th>Série</th><th>Fonte</th><th>Estado</th><th>Referência</th><th>Revisável</th></tr></thead><tbody>${sources.map(([key, source]) => {
+      const governance = source.governanca || {};
+      return `<tr><td>${escapeHtml(source.rotulo || key)}</td><td>${escapeHtml(source.fonte)}</td><td class="${source.ok ? "source-ok" : "source-fail"}">${source.ok ? "OK" : "Falhou"}</td><td>${escapeHtml(source.ultima_data || source.erro || "—")}</td><td>${governance.revisavel == null ? "—" : governance.revisavel ? "sim" : "não"}</td></tr>`;
+    }).join("")}</tbody></table></div>`;
   }
 
   function aiContext() {

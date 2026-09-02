@@ -241,3 +241,18 @@ label.item.on{color:var(--txt)}
   .episode-row>div:last-child{grid-template-columns:1fr}
   .predict-chart{height:240px}
 }
+
+
+/* ---- acessibilidade e layout móvel do preditor ---- */
+.skip-link{position:fixed;left:12px;top:-48px;z-index:20;background:var(--acento);color:#111;padding:8px 12px;border-radius:6px;font-weight:700}
+.skip-link:focus{top:10px}
+button:focus-visible,select:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid #58a6ff;outline-offset:2px}
+.source-table-wrap{overflow-x:auto;max-width:100%}
+@media (max-width:720px){
+  body[data-view="preditor"] #secGrafico{display:block;height:calc(100vh - 51px);min-height:0}
+  body[data-view="preditor"] #painel{width:100%;height:auto;overflow:visible;border-right:0;border-bottom:1px solid var(--borda);padding:8px 0}
+  body[data-view="preditor"] .side-nav{grid-template-columns:1fr 1fr;margin:0;border:0;padding:0 10px}
+  body[data-view="preditor"] #menuPreditor{display:none}
+  body[data-view="preditor"] #preditorView{height:calc(100vh - 116px);overflow-y:auto}
+}
+@media (prefers-reduced-motion:reduce){#rolagem{scroll-behavior:auto}*{animation:none!important;transition:none!important}}

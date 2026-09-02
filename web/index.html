@@ -2,11 +2,13 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BTC x Macro</title>
 <link rel="stylesheet" href="style.css">
 <script src="plotly.min.js"></script>
 </head>
-<body>
+<body data-view="mercado">
+<a class="skip-link" href="#preditorView">Ir para o Preditor EUA</a>
 
 <header>
   <h1>BTC <span>×</span> Macro</h1>
@@ -51,16 +53,16 @@
       <div id="grafico"></div>
     </div>
 
-    <main id="preditorView" class="view-panel" hidden>
+    <main id="preditorView" class="view-panel" tabindex="-1" aria-labelledby="predictorTitle" hidden>
       <div class="predict-head">
         <div>
           <div class="eyebrow">Estados Unidos · ativos de risco</div>
-          <h2>Preditor de crise e mercados</h2>
-          <p id="predictMeta">Carregando resultados...</p>
+          <h2 id="predictorTitle">Preditor de crise e mercados</h2>
+          <p id="predictMeta" aria-live="polite">Carregando resultados...</p>
         </div>
         <button id="btnCopyAi">Copiar contexto para IA</button>
       </div>
-      <div id="predictWarnings"></div>
+      <div id="predictWarnings" role="status" aria-live="polite"></div>
       <section class="predict-section">
         <h3>Probabilidades</h3>
         <div id="forecastCards" class="forecast-grid"></div>

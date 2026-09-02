@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -232,6 +234,63 @@ class PredictorTests(unittest.TestCase):
         points = history["series"][0]["pontos"]
         self.assertEqual([point["probabilidade"] for point in points], [.2, .3])
         self.assertEqual(history["series"][0]["titulo"], "Teste")
+
+
+    def test_collected_frame_rejects_future_dates_without_losing_other_series(self):
+        index = pd.to_datetime(["2026-01-01", "2026-02-01", "2030-01-01"])
+        frame = pd.DataFrame({"cpi": [1.0, 2.0, 999.0], "claims": [10.0, 11.0, 12.0]}, index=index)
+        status = {"cpi": {"ok": True}, "claims": {"ok": True}}
+        cleaned = predictor.validate_collected_frame(
+            frame, status, macro=True, as_of=pd.Timestamp("2026-12-31")
+        )
+        self.assertEqual(cleaned["cpi"].max(), 2.0)
+        self.assertEqual(status["cpi"]["validacao"]["datas_futuras_rejeitadas"], 1)
+        self.assertTrue(status["claims"]["ok"])
+        self.assertTrue(status["cpi"]["governanca"]["revisavel"])
+        self.assertIn("bls.gov", status["cpi"]["governanca"]["calendario_oficial"])
+
+    def test_snapshot_is_idempotent_for_same_inputs(self):
+        payload = {
+            "gerado_em": "2026-01-01T00:00:00Z",
+            "cobertura": {"mercado_fim": "2025-12-31"},
+            "previsoes": [{"id": "x", "probabilidade": .4, "ultima_observacao": "2025-12-31"}],
+        }
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "history.csv"
+            self.assertTrue(predictor.append_snapshot(payload, path))
+            payload["gerado_em"] = "2026-01-01T01:00:00Z"
+            self.assertFalse(predictor.append_snapshot(payload, path))
+            frame = pd.read_csv(path)
+        self.assertEqual(len(frame), 1)
+        self.assertIn("snapshot_id", frame)
+
+    def test_atomic_json_preserves_previous_file_on_invalid_number(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "out.json"
+            predictor.atomic_json(path, {"estado": "válido"})
+            with self.assertRaises(ValueError):
+                predictor.atomic_json(path, {"valor": float("nan")})
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["estado"], "válido")
+
+    def test_dashboard_has_accessibility_and_mobile_contract(self):
+        html = (Path(__file__).parent / "web" / "index.html").read_text(encoding="utf-8")
+        css = (Path(__file__).parent / "web" / "style.css").read_text(encoding="utf-8")
+        self.assertIn('name="viewport"', html)
+        self.assertIn('class="skip-link"', html)
+        self.assertIn('aria-live="polite"', html)
+        self.assertIn('aria-labelledby="predictorTitle"', html)
+        self.assertIn('body[data-view="preditor"]', css)
+
+
+    def test_predictor_javascript_syntax_when_node_is_available(self):
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js não disponível neste ambiente")
+        result = subprocess.run(
+            [node, "--check", str(Path(__file__).parent / "web" / "predictor.js")],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 

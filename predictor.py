@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import hashlib
 import json
 import math
 import os
@@ -97,6 +98,42 @@ TREASURY_DIRECT = {
     "real10": ("daily_treasury_real_yield_curve", "TC_10YEAR", 2003, "Juro real 10 anos", "%"),
 }
 
+
+RELEASE_METADATA = {
+    "cpi": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/cpi.htm"},
+    "core_cpi": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/cpi.htm"},
+    "ppi": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/ppi.htm"},
+    "payroll": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/empsit.htm"},
+    "unemployment": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/empsit.htm"},
+    "participation": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/empsit.htm"},
+    "wages": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/empsit.htm"},
+    "jolts": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/jolts.htm"},
+    "pce_price": {"revisavel": True, "calendario_oficial": "https://www.bea.gov/news/schedule"},
+    "core_pce": {"revisavel": True, "calendario_oficial": "https://www.bea.gov/news/schedule"},
+    "real_gdp": {"revisavel": True, "calendario_oficial": "https://www.bea.gov/news/schedule"},
+    "real_income": {"revisavel": True, "calendario_oficial": "https://www.bea.gov/news/schedule"},
+    "consumption": {"revisavel": True, "calendario_oficial": "https://www.bea.gov/news/schedule"},
+    "claims": {"revisavel": True, "calendario_oficial": "https://oui.doleta.gov/unemploy/claims.asp"},
+    "dgs10": {"revisavel": False, "calendario_oficial": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"},
+    "dgs3m": {"revisavel": False, "calendario_oficial": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"},
+    "real10": {"revisavel": False, "calendario_oficial": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"},
+    "nfci": {"revisavel": True, "calendario_oficial": "https://www.chicagofed.org/research/data/nfci/current-data"},
+    "recession": {"revisavel": True, "calendario_oficial": NBER_SOURCE_URL},
+    "sahm_realtime": {"revisavel": True, "calendario_oficial": "https://fred.stlouisfed.org/series/SAHMREALTIME"},
+}
+DEFAULT_MACRO_GOVERNANCE = {
+    "revisavel": True,
+    "data_tipo": "período de referência/observação, não timestamp de divulgação",
+    "vintage_tempo_real": False,
+    "limitacao": "A fonte corrente não fornece o vintage conhecido em cada data histórica.",
+}
+DEFAULT_MARKET_GOVERNANCE = {
+    "revisavel": False,
+    "data_tipo": "data do fechamento observado",
+    "vintage_tempo_real": True,
+    "limitacao": "Fechamentos podem sofrer correções operacionais da fonte, mas não revisão macroeconômica.",
+}
+
 TREASURY_URL = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml"
 DOL_CLAIMS_URL = "https://oui.doleta.gov/unemploy/wkclaims/report.asp"
 CHICAGO_NFCI_URL = "https://api.data.chicagofed.org/NFCI/nfci-data-series-csv.csv"
@@ -150,6 +187,60 @@ def safe_number(value, digits=4):
     return round(float(value), digits)
 
 
+
+def validate_collected_frame(frame: pd.DataFrame, status: dict, *,
+                             macro: bool, as_of: pd.Timestamp | None = None) -> pd.DataFrame:
+    """Normaliza índices, rejeita datas futuras e anexa governança de divulgação."""
+    reference = as_of if as_of is not None else pd.Timestamp.now("UTC").tz_localize(None)
+    as_of = pd.Timestamp(reference).normalize()
+    cleaned = {}
+    for key in frame.columns:
+        series = frame[key].copy()
+        index = pd.to_datetime(series.index, errors="coerce", utc=True).tz_localize(None).normalize()
+        valid_index = ~pd.isna(index)
+        series = pd.Series(series.to_numpy()[valid_index], index=index[valid_index], name=key)
+        duplicates = int(series.index.duplicated(keep="last").sum())
+        series = series[~series.index.duplicated(keep="last")].sort_index()
+        future = int((series.index > as_of).sum())
+        series = series.loc[series.index <= as_of].dropna()
+        state = status.setdefault(key, {"ok": False, "fonte": "desconhecida"})
+        base = DEFAULT_MACRO_GOVERNANCE if macro else DEFAULT_MARKET_GOVERNANCE
+        metadata = {**base, **(RELEASE_METADATA.get(key, {}) if macro else {})}
+        state["governanca"] = metadata
+        state["validacao"] = {
+            "ordem_cronologica": True,
+            "duplicatas_consolidadas": duplicates,
+            "datas_futuras_rejeitadas": future,
+            "data_limite": str(as_of.date()),
+        }
+        if series.empty:
+            state.update({"ok": False, "erro": "série vazia após validação de datas"})
+        else:
+            state["ultima_data"] = str(series.index[-1].date())
+            cleaned[key] = series
+    return pd.DataFrame(cleaned).sort_index()
+
+
+def data_governance_summary(market_status: dict, macro_status: dict) -> dict:
+    states = [*market_status.values(), *macro_status.values()]
+    return {
+        "series_revisaveis": sum(bool(item.get("governanca", {}).get("revisavel")) for item in states),
+        "series_com_calendario_oficial": sum(
+            bool(item.get("governanca", {}).get("calendario_oficial")) for item in states
+        ),
+        "datas_futuras_rejeitadas": sum(
+            int(item.get("validacao", {}).get("datas_futuras_rejeitadas", 0)) for item in states
+        ),
+        "duplicatas_consolidadas": sum(
+            int(item.get("validacao", {}).get("duplicatas_consolidadas", 0)) for item in states
+        ),
+        "nota_vintage": (
+            "Datas macro são períodos de referência. Sem vintage em tempo real, backtests aplicam "
+            "defasagem conservadora de um mês e declaram a limitação de revisões."
+        ),
+    }
+
+
 def fetch_markets(years: int) -> tuple[pd.DataFrame, dict]:
     start = (pd.Timestamp.now("UTC").tz_localize(None) - pd.DateOffset(years=years)).date()
     out, status = {}, {}
@@ -167,7 +258,7 @@ def fetch_markets(years: int) -> tuple[pd.DataFrame, dict]:
             status[key] = {"ok": True, "fonte": "Yahoo Finance", "ultima_data": str(series.index.max().date())}
         except Exception as exc:
             status[key] = {"ok": False, "fonte": "Yahoo Finance", "erro": str(exc)[:160]}
-    return pd.DataFrame(out).sort_index(), status
+    return validate_collected_frame(pd.DataFrame(out), status, macro=False), status
 
 
 def fetch_fred() -> tuple[pd.DataFrame, dict]:
@@ -204,7 +295,7 @@ def fetch_fred() -> tuple[pd.DataFrame, dict]:
     _apply_fallback(out, status, TREASURY_DIRECT, fetch_treasury_direct)
     _apply_fallback(out, status, ["hy_spread"], fetch_ofr_credit_direct)
     _apply_fallback(out, status, ["nfci"], fetch_nfci_direct)
-    return pd.DataFrame(out).sort_index(), status
+    return validate_collected_frame(pd.DataFrame(out), status, macro=True), status
 
 
 def _apply_fallback(out: dict, status: dict, candidates, fetcher) -> None:
@@ -1063,15 +1154,53 @@ def load_prediction_history(path: Path = HISTORY, forecast_titles: dict | None =
         return {"series": [], "observacoes": 0, "erro": str(exc)[:180]}
 
 
-def append_snapshot(payload: dict) -> None:
-    row = {"gerado_em": payload["gerado_em"]}
+def snapshot_identity(payload: dict) -> str:
+    stable = {
+        "cobertura": payload.get("cobertura", {}),
+        "previsoes": {
+            item["id"]: {
+                "probabilidade": item.get("probabilidade"),
+                "ultima_observacao": item.get("ultima_observacao"),
+            }
+            for item in payload.get("previsoes", [])
+        },
+    }
+    encoded = json.dumps(stable, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    return hashlib.sha256(encoded).hexdigest()[:20]
+
+
+def _atomic_csv(path: Path, frame: pd.DataFrame) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=path.name, suffix=".tmp", dir=path.parent)
+    os.close(fd)
+    try:
+        frame.to_csv(name, index=False)
+        os.replace(name, path)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
+def append_snapshot(payload: dict, path: Path = HISTORY) -> bool:
+    identity = snapshot_identity(payload)
+    row = {"gerado_em": payload["gerado_em"], "snapshot_id": identity}
     for item in payload["previsoes"]:
         row[item["id"]] = item.get("probabilidade")
     new = pd.DataFrame([row])
-    if HISTORY.exists():
-        old = pd.read_csv(HISTORY)
-        new = pd.concat([old, new], ignore_index=True).drop_duplicates("gerado_em", keep="last")
-    new.to_csv(HISTORY, index=False)
+    old = pd.read_csv(path) if path.exists() else pd.DataFrame()
+    if not old.empty and "snapshot_id" not in old:
+        value_columns = [column for column in old.columns if column != "gerado_em"]
+        old["snapshot_id"] = old[value_columns].apply(
+            lambda values: "legacy-" + hashlib.sha256(
+                json.dumps(values.fillna("").to_dict(), sort_keys=True, default=str).encode()
+            ).hexdigest()[:20],
+            axis=1,
+        )
+    existed = bool(not old.empty and identity in set(old.get("snapshot_id", [])))
+    merged = pd.concat([old, new], ignore_index=True)
+    merged = merged.drop_duplicates("snapshot_id", keep="last")
+    _atomic_csv(path, merged)
+    return not existed
 
 
 def build(years: int) -> dict:
@@ -1187,6 +1316,7 @@ def build(years: int) -> dict:
         warnings.append(f"{len(failed)} séries indisponíveis; modelos degradados sem interromper a atualização.")
     warnings.append("Probabilidades são estimativas estatísticas, não recomendação de investimento.")
     warnings.append("Dados macro revisados são defasados em um mês; benchmarks em tempo real são identificados separadamente.")
+    governance_summary = data_governance_summary(market_status, fred_status)
     historical_benchmarks = build_historical_benchmarks(monthly, markets)
     similar_episodes = find_similar_episodes(monthly, recession, markets)
     scenarios = build_statistical_scenarios(forecasts)
@@ -1199,12 +1329,15 @@ def build(years: int) -> dict:
         "previsoes": forecasts, "benchmarks": benchmarks, "indicadores": indicators,
         "comparacoes_historicas": historical_benchmarks,
         "episodios_similares": similar_episodes, "cenarios": scenarios,
-        "fontes": {"mercado": market_status, "macro": fred_status}, "avisos": warnings,
+        "fontes": {"mercado": market_status, "macro": fred_status},
+        "governanca_dados": governance_summary, "avisos": warnings,
         "falhas": failed,
         "metodologia": {
             "validacao": "Divisão cronológica 55% treino, 23% calibração isotônica e 22% teste.",
             "ensemble": "Regressão logística regularizada + gradient boosting.",
             "anti_vazamento": "Variáveis macro deslocadas um mês; nenhuma divisão aleatória.",
+            "revisoes": "Períodos de referência validados; vintage histórico indisponível é declarado e mitigado por defasagem conservadora.",
+            "idempotencia": "Snapshots usam identidade estável de cobertura, observações e probabilidades.",
             "metricas": "Brier, log loss, AUC, acurácia e curva de calibração fora da amostra.",
             "comparacoes": "Recessões oficiais NBER com janela declarada; ciclos BTC segmentados por blocos de halving.",
         },
