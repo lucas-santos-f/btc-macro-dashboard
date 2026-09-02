@@ -118,7 +118,7 @@ RELEASE_METADATA = {
     "dgs3m": {"revisavel": False, "calendario_oficial": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"},
     "real10": {"revisavel": False, "calendario_oficial": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"},
     "nfci": {"revisavel": True, "calendario_oficial": "https://www.chicagofed.org/research/data/nfci/current-data"},
-    "recession": {"revisavel": True, "calendario_oficial": NBER_SOURCE_URL},
+    "recession": {"revisavel": True, "calendario_oficial": "https://www.nber.org/research/data/us-business-cycle-expansions-and-contractions"},
     "sahm_realtime": {"revisavel": True, "calendario_oficial": "https://fred.stlouisfed.org/series/SAHMREALTIME"},
 }
 DEFAULT_MACRO_GOVERNANCE = {
