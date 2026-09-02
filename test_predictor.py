@@ -157,6 +157,40 @@ class PredictorTests(unittest.TestCase):
         self.assertIn("minoritária", result["motivo"])
 
 
+    def test_period_metrics_use_only_observed_window(self):
+        index = pd.date_range("2020-01-01", periods=4, freq="D")
+        metrics = predictor.period_metrics(
+            pd.Series([100.0, 120.0, 90.0, 110.0], index=index),
+            pd.Timestamp("2020-01-01"), pd.Timestamp("2020-01-04"),
+        )
+        self.assertAlmostEqual(metrics["retorno"], .10)
+        self.assertAlmostEqual(metrics["drawdown_maximo"], -.25)
+        self.assertEqual(metrics["observacoes"], 4)
+
+    def test_recession_comparisons_keep_missing_series_explicit(self):
+        market_index = pd.date_range("2006-01-01", "2021-01-01", freq="D")
+        markets = pd.DataFrame({"sp500": np.linspace(100, 200, len(market_index))},
+                               index=market_index)
+        month_index = pd.date_range("2000-01-01", "2021-01-01", freq="MS")
+        monthly = pd.DataFrame({"term_spread": np.linspace(-1, 2, len(month_index))},
+                               index=month_index)
+        rows = predictor.recession_comparisons(monthly, markets)
+        self.assertEqual([row["id"] for row in rows], ["2000_2001", "2008", "2020"])
+        self.assertIn("Bitcoin", rows[1]["series_ausentes"])
+        self.assertEqual(rows[1]["origem"]["recessoes"], "NBER Business Cycle Dating Committee")
+        self.assertIsNotNone(rows[1]["curva_10a_3m"])
+
+    def test_btc_cycles_are_derived_from_available_prices(self):
+        index = pd.date_range("2016-07-09", "2025-01-01", freq="D")
+        values = 100 * np.exp(np.linspace(0, 2, len(index)))
+        markets = pd.DataFrame({"btc": values}, index=index)
+        cycles = predictor.btc_cycle_comparisons(markets)
+        ids = [item["id"] for item in cycles]
+        self.assertIn("halving_420000", ids)
+        self.assertIn("halving_630000", ids)
+        self.assertTrue(next(x for x in cycles if x["id"] == "halving_420000")["completo_desde_halving"])
+
+
 
 if __name__ == "__main__":
     unittest.main()

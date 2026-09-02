@@ -110,6 +110,27 @@ RECESSIONS = [
     ("2020-02", "2020-04"),
 ]
 
+NBER_EPISODES = [
+    {
+        "id": "2000_2001", "nome": "2000–2001 (dot-com / recessão de 2001)",
+        "inicio": "2001-03-01", "fim": "2001-11-30",
+    },
+    {
+        "id": "2008", "nome": "Crise financeira de 2008",
+        "inicio": "2007-12-01", "fim": "2009-06-30",
+    },
+    {
+        "id": "2020", "nome": "Recessão de 2020",
+        "inicio": "2020-02-01", "fim": "2020-04-30",
+    },
+]
+NBER_SOURCE_URL = "https://www.nber.org/research/data/us-business-cycle-expansions-and-contractions"
+BTC_HALVINGS = [
+    ("2012-11-28", 210000), ("2016-07-09", 420000),
+    ("2020-05-11", 630000), ("2024-04-20", 840000),
+]
+
+
 
 def atomic_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -814,6 +835,117 @@ def latest_indicator(frame: pd.DataFrame, key: str, label: str, unit="", digits=
             "variacao": safe_number(current - previous, digits), "data": str(series.index[-1].date())}
 
 
+
+def period_metrics(series: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> dict | None:
+    """Resume apenas observações existentes na janela; não interpola dados ausentes."""
+    clean = series.dropna().sort_index()
+    window = clean.loc[(clean.index >= start) & (clean.index <= end)]
+    if len(window) < 2:
+        return None
+    returns = window.pct_change(fill_method=None).dropna()
+    drawdown = window / window.cummax() - 1
+    return {
+        "inicio_observado": str(window.index[0].date()),
+        "fim_observado": str(window.index[-1].date()),
+        "observacoes": int(len(window)),
+        "retorno": safe_number(window.iloc[-1] / window.iloc[0] - 1),
+        "drawdown_maximo": safe_number(drawdown.min()),
+        "volatilidade_anualizada": safe_number(returns.std() * math.sqrt(252)) if len(returns) > 1 else None,
+    }
+
+
+def recession_comparisons(monthly: pd.DataFrame, markets: pd.DataFrame) -> list[dict]:
+    """Compara janelas fixas ao redor das recessões oficiais, deixando lacunas explícitas."""
+    output = []
+    for episode in NBER_EPISODES:
+        recession_start = pd.Timestamp(episode["inicio"])
+        recession_end = pd.Timestamp(episode["fim"])
+        analysis_start = recession_start - pd.DateOffset(months=12)
+        analysis_end = recession_end + pd.DateOffset(months=6)
+        assets, missing = {}, []
+        for key, label in (("sp500", "S&P 500"), ("nasdaq", "Nasdaq"), ("btc", "Bitcoin")):
+            metrics = period_metrics(
+                markets[key], analysis_start, analysis_end
+            ) if key in markets else None
+            if metrics is None:
+                missing.append(label)
+            assets[key] = metrics
+        curve = None
+        if "term_spread" in monthly:
+            curve_window = monthly["term_spread"].dropna()
+            curve_window = curve_window.loc[
+                (curve_window.index >= analysis_start) & (curve_window.index <= analysis_end)
+            ]
+            if not curve_window.empty:
+                before = curve_window.loc[curve_window.index <= recession_start]
+                curve = {
+                    "valor_pre_recessao": safe_number(before.iloc[-1]) if not before.empty else None,
+                    "minimo_janela": safe_number(curve_window.min()),
+                    "maximo_janela": safe_number(curve_window.max()),
+                    "inicio_observado": str(curve_window.index[0].date()),
+                    "fim_observado": str(curve_window.index[-1].date()),
+                }
+        output.append({
+            "id": episode["id"], "nome": episode["nome"],
+            "periodo_nber": [str(recession_start.date()), str(recession_end.date())],
+            "janela_analitica": [str(analysis_start.date()), str(analysis_end.date())],
+            "regra_janela": "12 meses antes do início NBER até 6 meses após o fim NBER",
+            "ativos": assets, "curva_10a_3m": curve,
+            "cobertura": "completa" if not missing else "parcial",
+            "series_ausentes": missing,
+            "origem": {
+                "recessoes": "NBER Business Cycle Dating Committee",
+                "url": NBER_SOURCE_URL,
+                "mercados": "Yahoo Finance; somente fechamentos existentes na cobertura coletada",
+            },
+        })
+    return output
+
+
+def btc_cycle_comparisons(markets: pd.DataFrame) -> list[dict]:
+    """Segmenta os ciclos disponíveis por halvings verificáveis na blockchain."""
+    if "btc" not in markets or markets["btc"].dropna().empty:
+        return []
+    btc = markets["btc"].dropna().sort_index()
+    output = []
+    for index, (start_text, block) in enumerate(BTC_HALVINGS):
+        start = pd.Timestamp(start_text)
+        next_start = (
+            pd.Timestamp(BTC_HALVINGS[index + 1][0])
+            if index + 1 < len(BTC_HALVINGS) else btc.index.max()
+        )
+        end = min(next_start - pd.Timedelta(days=1), btc.index.max())
+        metrics = period_metrics(btc, start, end)
+        if metrics is None:
+            continue
+        observed_start = pd.Timestamp(metrics["inicio_observado"])
+        complete_start = abs((observed_start - start).days) <= 7
+        output.append({
+            "id": f"halving_{block}", "nome": f"Ciclo após halving do bloco {block}",
+            "inicio": str(start.date()), "fim": str(end.date()),
+            "completo_desde_halving": complete_start,
+            "metricas": metrics,
+            "origem": "Bitcoin blockchain: timestamp público do bloco de halving; preços Yahoo Finance",
+            "limitacao": (
+                None if complete_start
+                else "A série de preços disponível começa depois do halving; métricas cobrem só o trecho observado."
+            ),
+        })
+    return output
+
+
+def build_historical_benchmarks(monthly: pd.DataFrame, markets: pd.DataFrame) -> dict:
+    return {
+        "recessoes": recession_comparisons(monthly, markets),
+        "ciclos_btc": btc_cycle_comparisons(markets),
+        "limitacoes": [
+            "Comparações são descritivas e não implicam repetição do episódio.",
+            "Valores ausentes permanecem nulos; não há interpolação nem reconstrução de preços.",
+            "Datas de recessão seguem o NBER; janelas de mercado são regras analíticas declaradas.",
+        ],
+    }
+
+
 def append_snapshot(payload: dict) -> None:
     row = {"gerado_em": payload["gerado_em"]}
     for item in payload["previsoes"]:
@@ -893,6 +1025,14 @@ def build(years: int) -> dict:
                        "probabilidade": safe_number(base12),
                        "descricao": "Frequência histórica de recessão no horizonte, sem variáveis explicativas."})
     if "term_spread" in monthly:
+        spread = monthly["term_spread"].dropna()
+        if not spread.empty:
+            benchmarks.append({
+                "nome": "Curva Treasury 10a–3m atual", "horizonte": "estado atual",
+                "valor": safe_number(spread.iloc[-1]),
+                "data": str(spread.index[-1].date()),
+                "descricao": "Diferença observada entre Treasury de 10 anos e 3 meses; valor negativo indica inversão.",
+            })
         result = fit_forecast(monthly[["term_spread"]], future_any(recession, 12), min_samples=300)
         benchmarks.append({"nome": "Estrella–Mishkin (curva 10a–3m)", "horizonte": "12 meses", **result})
     if "sahm_realtime" in fred and not fred["sahm_realtime"].dropna().empty:
@@ -930,13 +1070,15 @@ def build(years: int) -> dict:
         warnings.append(f"{len(failed)} séries indisponíveis; modelos degradados sem interromper a atualização.")
     warnings.append("Probabilidades são estimativas estatísticas, não recomendação de investimento.")
     warnings.append("Dados macro revisados são defasados em um mês; benchmarks em tempo real são identificados separadamente.")
+    historical_benchmarks = build_historical_benchmarks(monthly, markets)
     payload = {
-        "versao": 1, "gerado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "versao": 2, "gerado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "cobertura": {"fontes_ok": ok_sources, "fontes_total": all_sources,
                       "mercado_inicio": str(markets.index.min().date()), "mercado_fim": str(markets.index.max().date()),
                       "macro_inicio": str(fred.index.min().date()) if not fred.empty else None,
                       "macro_fim": str(fred.index.max().date()) if not fred.empty else None},
         "previsoes": forecasts, "benchmarks": benchmarks, "indicadores": indicators,
+        "comparacoes_historicas": historical_benchmarks,
         "fontes": {"mercado": market_status, "macro": fred_status}, "avisos": warnings,
         "falhas": failed,
         "metodologia": {
@@ -944,6 +1086,7 @@ def build(years: int) -> dict:
             "ensemble": "Regressão logística regularizada + gradient boosting.",
             "anti_vazamento": "Variáveis macro deslocadas um mês; nenhuma divisão aleatória.",
             "metricas": "Brier, log loss, AUC, acurácia e curva de calibração fora da amostra.",
+            "comparacoes": "Recessões oficiais NBER com janela declarada; ciclos BTC segmentados por blocos de halving.",
         },
     }
     return payload
