@@ -8,7 +8,7 @@
 // Base 100 is recomputed at the left edge of the visible window on every
 // zoom/pan, so no arbitrary base date biases the comparison.
 
-const gd = document.getElementById("grafico");
+const gd = document.getElementById("chart");
 const LS_KEY = "btcmacro.selection";
 
 let DATA, TS, BY_KEY;
@@ -19,21 +19,22 @@ let traceMeta = [];  // parallel to the plotly traces
 let sel = {indexedKeys: new Set(), oscillator: null};
 
 const fmtNum = (v, decimals) =>
-  v.toLocaleString("pt-BR", {minimumFractionDigits: decimals, maximumFractionDigits: decimals});
+  v.toLocaleString("en-US", {minimumFractionDigits: decimals, maximumFractionDigits: decimals});
 
 function fmtValue(v, s) {
   const a = Math.abs(v);
 
   // spelled out, big numbers are unreadable in the tooltip
-  if (a >= 1e12) return `${s.prefix}${fmtNum(v / 1e12, 2)} tri${s.suffix}`;
-  if (a >= 1e9)  return `${s.prefix}${fmtNum(v / 1e9, 2)} bi${s.suffix}`;
-  if (a >= 1e6)  return `${s.prefix}${fmtNum(v / 1e6, 2)} mi${s.suffix}`;
+  if (a >= 1e12) return `${s.prefix}${fmtNum(v / 1e12, 2)}T${s.suffix}`;
+  if (a >= 1e9)  return `${s.prefix}${fmtNum(v / 1e9, 2)}B${s.suffix}`;
+  if (a >= 1e6)  return `${s.prefix}${fmtNum(v / 1e6, 2)}M${s.suffix}`;
   return `${s.prefix}${fmtNum(v, s.decimals)}${s.suffix}`;
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtDate = iso => {
-  const [a, m, d] = iso.split("-");
-  return `${d}/${m}/${a}`;
+  const [y, m, d] = iso.split("-");
+  return `${MONTHS[m - 1]} ${+d}, ${y}`;
 };
 
 function toMs(v) {
@@ -126,10 +127,10 @@ function buildLayout() {
       rangeselector: {
         buttons: [
           {count: 3, label: "3M", step: "month", stepmode: "backward"},
-          {count: 1, label: "1A", step: "year", stepmode: "backward"},
-          {count: 2, label: "2A", step: "year", stepmode: "backward"},
-          {count: 5, label: "5A", step: "year", stepmode: "backward"},
-          {step: "all", label: "Máx"},
+          {count: 1, label: "1Y", step: "year", stepmode: "backward"},
+          {count: 2, label: "2Y", step: "year", stepmode: "backward"},
+          {count: 5, label: "5Y", step: "year", stepmode: "backward"},
+          {step: "all", label: "Max"},
         ],
         bgcolor: "#161b22", activecolor: "#F7931A",
         bordercolor: "#30363d", borderwidth: 1,
@@ -139,7 +140,7 @@ function buildLayout() {
     yaxis: {
       ...axis, anchor: "x", type: logScale ? "log" : "linear",
       domain: hasOsc ? [0.32, 1] : [0, 1],
-      title: {text: "Índice (base 100)", font: {size: 11}},
+      title: {text: "Index (base 100)", font: {size: 11}},
     },
   };
 
@@ -165,11 +166,11 @@ function draw() {
   const t = selectedTraces();
   if (!t.length) {
     Plotly.purge(gd);
-    gd.innerHTML = '<div id="vazio">Selecione ao menos uma série no painel à esquerda.</div>';
+    gd.innerHTML = '<div id="empty">Pick at least one series in the panel on the left.</div>';
     document.getElementById("base").textContent = "";
     return Promise.resolve();
   }
-  if (gd.querySelector("#vazio")) gd.innerHTML = "";
+  if (gd.querySelector("#empty")) gd.innerHTML = "";
   busy = true;
   return Plotly.react(gd, t, buildLayout(), CONFIG)
     .then(() => { baseLabel(); bindRelayout(); })
@@ -180,10 +181,10 @@ function baseLabel() {
   const el = document.getElementById("base");
   const n = sel.indexedKeys.size;
   el.innerHTML = n
-    ? `Base <b>${fmtDate(DATA.dates[baseIdx])} = 100</b> · recalculada a cada ` +
-      `zoom/pan · ${n} série${n > 1 ? "s" : ""} no painel superior` +
-      (sel.oscillator ? ` · oscilador: <b>${BY_KEY[sel.oscillator].label}</b>` : "")
-    : (sel.oscillator ? `Oscilador: <b>${BY_KEY[sel.oscillator].label}</b> (escala nativa)` : "");
+    ? `Base <b>${fmtDate(DATA.dates[baseIdx])} = 100</b> · recomputed on every ` +
+      `zoom/pan · ${n} series in the top panel` +
+      (sel.oscillator ? ` · oscillator: <b>${BY_KEY[sel.oscillator].label}</b>` : "")
+    : (sel.oscillator ? `Oscillator: <b>${BY_KEY[sel.oscillator].label}</b> (native scale)` : "");
 }
 
 function applyRebase(start) {
@@ -215,8 +216,8 @@ function bindRelayout() {
 }
 
 function buildPanel() {
-  const target = {indexed: document.getElementById("listaIndexadas"),
-                native: document.getElementById("listaNativas")};
+  const target = {indexed: document.getElementById("listIndexed"),
+                native: document.getElementById("listNative")};
 
   for (const g of DATA.groups) {
     for (const kind of ["indexed", "native"]) {
@@ -224,7 +225,7 @@ function buildPanel() {
       if (!inGroup.length) continue;
 
       const tit = document.createElement("div");
-      tit.className = "grupo-tit";
+      tit.className = "group-title";
       tit.textContent = g.name;
       target[kind].appendChild(tit);
 
@@ -232,7 +233,7 @@ function buildPanel() {
         const lab = document.createElement("label");
         lab.className = "item";
         lab.dataset.key = s.key;
-        lab.title = `fonte: ${s.source}`;
+        lab.title = `source: ${s.source}`;
 
         const inp = document.createElement("input");
         inp.type = kind === "indexed" ? "checkbox" : "radio";
@@ -306,10 +307,10 @@ function loadSelection() {
 }
 
 function bindControls() {
-  const btnScale = document.getElementById("btnEscala");
+  const btnScale = document.getElementById("btnScale");
   const syncScale = () => {
     btnScale.setAttribute("aria-pressed", String(logScale));
-    btnScale.textContent = logScale ? "Escala log" : "Escala linear";
+    btnScale.textContent = logScale ? "Log scale" : "Linear scale";
   };
   syncScale();
   btnScale.addEventListener("click", () => {
@@ -321,10 +322,10 @@ function bindControls() {
       .finally(() => { busy = false; });
   });
 
-  document.getElementById("btnLimpar").addEventListener("click", () => {
+  document.getElementById("btnClear").addEventListener("click", () => {
     sel.indexedKeys.clear(); sel.oscillator = null; draw();
   });
-  document.getElementById("btnPadrao").addEventListener("click", () => {
+  document.getElementById("btnDefault").addEventListener("click", () => {
     defaultSelection(); draw();
   });
   document.getElementById("btnInsights").addEventListener("click", () => {
@@ -341,16 +342,16 @@ fetch("data.json", {cache: "no-store"})
     DATA = d;
     TS = d.dates.map(x => Date.parse(x + "T00:00:00Z"));
     BY_KEY = Object.fromEntries(d.series.map(s => [s.key, s]));
-    document.getElementById("periodo").textContent =
-      `${fmtDate(d.start)} – ${fmtDate(d.end)} · ${d.n.toLocaleString("pt-BR")} dias úteis · ` +
-      `${d.series.length} séries · atualizado em ${fmtDate(d.generated_at.slice(0, 10))}`;
+    document.getElementById("period").textContent =
+      `${fmtDate(d.start)} – ${fmtDate(d.end)} · ${d.n.toLocaleString("en-US")} days · ` +
+      `${d.series.length} series · updated ${fmtDate(d.generated_at.slice(0, 10))}`;
     buildPanel();
     loadSelection();
     bindControls();
     return draw().then(() => Insights.init(DATA, BY_KEY, TS));
   })
   .catch(e => {
-    document.getElementById("erro").style.display = "block";
-    document.getElementById("erro").textContent =
-      `Falha ao carregar os dados.\n\n${e.message}\n\nRode:  python fetch_data.py`;
+    document.getElementById("error").style.display = "block";
+    document.getElementById("error").textContent =
+      `Could not load the data.\n\n${e.message}\n\nRun:  python fetch_data.py`;
   });

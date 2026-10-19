@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,64 +7,64 @@
 <link rel="stylesheet" href="style.css">
 <script src="plotly.min.js"></script>
 </head>
-<body data-view="mercado">
-<a class="skip-link" href="#preditorView">Ir para o Preditor EUA</a>
+<body data-view="market">
+<a class="skip-link" href="#predictorView">Skip to the US predictor</a>
 
 <header>
   <h1>BTC <span>×</span> Macro</h1>
-  <div class="meta" id="periodo"></div>
-  <div class="controles">
-    <button id="btnLimpar" title="Desmarca todas as séries">Limpar</button>
-    <button id="btnPadrao" title="Volta à seleção inicial">Padrão</button>
-    <button id="btnEscala" aria-pressed="true">Escala log</button>
-    <button id="btnInsights" title="Ir para a análise estatística">Insights ↓</button>
+  <div class="meta" id="period"></div>
+  <div class="controls">
+    <button id="btnClear" title="Unselect every series">Clear</button>
+    <button id="btnDefault" title="Back to the starting selection">Default</button>
+    <button id="btnScale" aria-pressed="true">Log scale</button>
+    <button id="btnInsights" title="Jump to the statistical analysis">Insights ↓</button>
   </div>
 </header>
 
-<div id="rolagem">
+<div id="scroller">
 
-  <section id="secGrafico">
-    <aside id="painel">
-      <nav class="side-nav" aria-label="Áreas do dashboard">
-        <button class="side-tab" data-view="mercado" aria-pressed="true">Mercado atual</button>
-        <button class="side-tab" data-view="preditor" aria-pressed="false">Preditor EUA</button>
+  <section id="secChart">
+    <aside id="sidePanel">
+      <nav class="side-nav" aria-label="Dashboard sections">
+        <button class="side-tab" data-view="market" aria-pressed="true">Market</button>
+        <button class="side-tab" data-view="predictor" aria-pressed="false">US predictor</button>
       </nav>
-      <div id="menuMercado">
-        <div class="secao">
-          <div class="secao-tit">Tendência <small>base 100, comparáveis</small></div>
-          <div id="listaIndexadas"></div>
+      <div id="menuMarket">
+        <div class="panel-section">
+          <div class="panel-title">Trend <small>base 100, comparable</small></div>
+          <div id="listIndexed"></div>
         </div>
-        <div class="secao">
-          <div class="secao-tit">Oscilador <small>escala própria, um por vez</small></div>
-          <div id="listaNativas"></div>
+        <div class="panel-section">
+          <div class="panel-title">Oscillator <small>own scale, one at a time</small></div>
+          <div id="listNative"></div>
         </div>
       </div>
-      <div id="menuPreditor" hidden>
+      <div id="menuPredictor" hidden>
         <div class="predict-side-copy">
-          <strong>Preditor de crise e mercados</strong>
-          <p>Probabilidades calibradas, benchmarks e qualidade fora da amostra.</p>
-          <button id="btnCopyAiSide">Copiar contexto para IA</button>
+          <strong>Crisis and market predictor</strong>
+          <p>Calibrated probabilities, benchmarks and out-of-sample quality.</p>
+          <button id="btnCopyAiSide">Copy context for an LLM</button>
         </div>
       </div>
     </aside>
 
     <div id="area" class="view-panel">
       <div id="base"></div>
-      <div id="grafico"></div>
+      <div id="chart"></div>
     </div>
 
-    <main id="preditorView" class="view-panel" tabindex="-1" aria-labelledby="predictorTitle" hidden>
+    <main id="predictorView" class="view-panel" tabindex="-1" aria-labelledby="predictorTitle" hidden>
       <div class="predict-head">
         <div>
-          <div class="eyebrow">Estados Unidos · ativos de risco</div>
-          <h2 id="predictorTitle">Preditor de crise e mercados</h2>
-          <p id="predictMeta" aria-live="polite">Carregando resultados...</p>
+          <div class="eyebrow">United States · risk assets</div>
+          <h2 id="predictorTitle">Crisis and market predictor</h2>
+          <p id="predictMeta" aria-live="polite">Loading results...</p>
         </div>
-        <button id="btnCopyAi">Copiar contexto para IA</button>
+        <button id="btnCopyAi">Copy context for an LLM</button>
       </div>
       <div id="predictWarnings" role="status" aria-live="polite"></div>
       <section class="predict-section">
-        <h3>Probabilidades</h3>
+        <h3>Probabilities</h3>
         <div id="forecastCards" class="forecast-grid"></div>
       </section>
       <section class="predict-section split-section">
@@ -73,41 +73,41 @@
           <div id="benchmarkList"></div>
         </div>
         <div>
-          <h3>Indicadores atuais</h3>
+          <h3>Current indicators</h3>
           <div id="indicatorGrid" class="indicator-grid"></div>
         </div>
       </section>
       <section class="predict-section split-section history-section">
         <div>
-          <h3>Cenários estatísticos</h3>
+          <h3>Statistical scenarios</h3>
           <div id="scenarioGrid" class="scenario-grid"></div>
         </div>
         <div>
-          <h3>Episódios históricos similares</h3>
+          <h3>Similar past episodes</h3>
           <div id="similarEpisodes"></div>
         </div>
       </section>
       <section class="predict-section chart-grid">
         <article class="chart-card">
-          <label for="calibrationSelect">Curva de calibração</label>
-          <select id="calibrationSelect" aria-label="Escolha a previsão para a curva de calibração"></select>
-          <div id="calibrationChart" class="predict-chart" role="img" aria-label="Probabilidade prevista comparada à frequência observada"></div>
+          <label for="calibrationSelect">Calibration curve</label>
+          <select id="calibrationSelect" aria-label="Forecast shown in the calibration curve"></select>
+          <div id="calibrationChart" class="predict-chart" role="img" aria-label="Predicted probability against observed frequency"></div>
           <p id="calibrationSummary" class="chart-summary"></p>
         </article>
         <article class="chart-card">
-          <label for="historySelect">Histórico de previsões</label>
-          <select id="historySelect" aria-label="Escolha a previsão para o histórico"></select>
-          <div id="historyChart" class="predict-chart" role="img" aria-label="Evolução histórica da probabilidade"></div>
+          <label for="historySelect">Forecast history</label>
+          <select id="historySelect" aria-label="Forecast shown in the history"></select>
+          <div id="historyChart" class="predict-chart" role="img" aria-label="Probability over past runs"></div>
           <p id="historySummary" class="chart-summary"></p>
         </article>
       </section>
       <section class="predict-section">
-        <h3>Qualidade e metodologia</h3>
+        <h3>Quality and method</h3>
         <div id="methodology"></div>
       </section>
       <section class="predict-section">
         <details>
-          <summary>Estado das fontes</summary>
+          <summary>Data sources</summary>
           <div id="sourceStatus"></div>
         </details>
       </section>
@@ -115,72 +115,72 @@
   </section>
 
   <section id="secInsights">
-    <div class="ins-topo">
-      <h2>Análise estatística</h2>
+    <div class="ins-top">
+      <h2>Statistical analysis</h2>
       <p class="ins-sub">
-        Tudo é calculado no seu navegador, sem rede e sem custo. Correlação e
-        regressão rodam sobre <b>retornos diários</b>, nunca sobre preços — duas
-        séries em tendência dão correlação perto de 1 sem ter relação nenhuma.
+        Everything runs in your browser, no network, no cost. Correlation and
+        regression use <b>daily returns</b>, never prices: two trending series
+        show a correlation near 1 without being related at all.
       </p>
     </div>
 
     <div class="ins-grid">
-      <div class="ins-lado">
-        <div class="campo">
-          <label id="rotuloA">Série A</label>
+      <div class="ins-side">
+        <div class="field">
+          <label id="labelA">Series A</label>
           <select id="selA"></select>
         </div>
-        <div class="campo" id="linhaB">
-          <label id="rotuloB">Série B</label>
+        <div class="field" id="rowB">
+          <label id="labelB">Series B</label>
           <select id="selB"></select>
         </div>
 
-        <div class="campo">
-          <label>Período</label>
-          <div class="botoes">
-            <button data-years="1">1A</button>
-            <button data-years="2">2A</button>
-            <button data-years="3">3A</button>
-            <button data-years="5">5A</button>
-            <button data-years="max">Máx</button>
-            <button data-years="chart" title="Usa o zoom atual do gráfico acima">Janela do gráfico</button>
+        <div class="field">
+          <label>Period</label>
+          <div class="buttons">
+            <button data-years="1">1Y</button>
+            <button data-years="2">2Y</button>
+            <button data-years="3">3Y</button>
+            <button data-years="5">5Y</button>
+            <button data-years="max">Max</button>
+            <button data-years="chart" title="Uses the current zoom of the chart above">Chart window</button>
           </div>
-          <div id="insPeriodo" class="dica"></div>
+          <div id="insPeriod" class="hint"></div>
         </div>
 
-        <div class="campo" id="linhaJanela">
-          <label>Janela móvel (dias)</label>
-          <input id="inpJanela" type="number" value="90" min="10" max="730" step="10">
+        <div class="field" id="rowWindow">
+          <label>Rolling window (days)</label>
+          <input id="inpWindow" type="number" value="90" min="10" max="730" step="10">
         </div>
-        <div class="campo" id="linhaHorizonte">
-          <label>Horizonte à frente (dias)</label>
-          <input id="inpHorizonte" type="number" value="90" min="5" max="500" step="5">
-          <label style="margin-top:8px">Número de faixas</label>
-          <input id="inpFaixas" type="number" value="5" min="2" max="10" step="1">
+        <div class="field" id="rowHorizon">
+          <label>Horizon ahead (days)</label>
+          <input id="inpHorizon" type="number" value="90" min="5" max="500" step="5">
+          <label style="margin-top:8px">Number of bins</label>
+          <input id="inpBins" type="number" value="5" min="2" max="10" step="1">
         </div>
-        <div class="campo" id="linhaDefas">
-          <label>Defasagem máxima (dias)</label>
-          <input id="inpDefas" type="number" value="60" min="5" max="180" step="5">
+        <div class="field" id="rowLag">
+          <label>Max lag (days)</label>
+          <input id="inpLag" type="number" value="60" min="5" max="180" step="5">
         </div>
 
-        <div class="campo">
-          <label>Método</label>
-          <div id="insMetodos" class="metodos"></div>
-          <div id="insNivel" class="dica"></div>
+        <div class="field">
+          <label>Method</label>
+          <div id="insMethods" class="methods"></div>
+          <div id="insLevel" class="hint"></div>
         </div>
       </div>
 
-      <div class="ins-centro">
-        <div id="insGrafico"></div>
-        <div id="insNumeros"></div>
-        <div id="insExplica"></div>
+      <div class="ins-main">
+        <div id="insChart"></div>
+        <div id="insNumbers"></div>
+        <div id="insExplain"></div>
       </div>
     </div>
   </section>
 
 </div>
 
-<div id="erro"></div>
+<div id="error"></div>
 
 <script src="stats.js"></script>
 <script src="insights.js"></script>

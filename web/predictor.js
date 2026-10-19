@@ -3,54 +3,53 @@
 (() => {
   let payload = null;
   const el = id => document.getElementById(id);
-  const pct = value => value == null ? "—" : `${(value * 100).toFixed(1).replace(".", ",")}%`;
-  const num = value => value == null ? "—" : Number(value).toLocaleString("pt-BR", {maximumFractionDigits: 2});
-  // the payload uses english ids, the screen speaks portuguese
-  const KIND = {macro: "macro", stress: "estresse", direction: "direção", inflation: "inflação", jobs: "emprego"};
-  const QUALITY = {high: "alta", moderate: "moderada", low: "baixa"};
-  const METHOD = {validation: "validação", ensemble: "ensemble", no_leakage: "anti-vazamento", revisions: "revisões",
-    idempotency: "idempotência", metrics: "métricas", comparisons: "comparações"};
-  const label = (map, key) => map[key] ?? String(key ?? "").replaceAll("_", " ");
+  const pct = value => value == null ? "—" : `${(value * 100).toFixed(1)}%`;
+  const num = value => value == null ? "—" : Number(value).toLocaleString("en-US", {maximumFractionDigits: 2});
+  const label = key => String(key ?? "").replaceAll("_", " ");
   const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
   function setView(name) {
-    const predictor = name === "preditor";
+    const predictor = name === "predictor";
     el("area").hidden = predictor;
-    el("preditorView").hidden = !predictor;
-    el("menuMercado").hidden = predictor;
-    el("menuPreditor").hidden = !predictor;
+    el("predictorView").hidden = !predictor;
+    el("menuMarket").hidden = predictor;
+    el("menuPredictor").hidden = !predictor;
     document.querySelectorAll(".side-tab").forEach(button => {
       button.setAttribute("aria-pressed", String(button.dataset.view === name));
     });
-    document.querySelector("header .controles").style.visibility = predictor ? "hidden" : "visible";
+    document.querySelector("header .controls").style.visibility = predictor ? "hidden" : "visible";
     document.body.dataset.view = name;
-    if (predictor) el("preditorView").focus({preventScroll: true});
+    if (predictor) el("predictorView").focus({preventScroll: true});
   }
 
   function metricLine(metrics) {
-    if (!metrics) return "Sem backtest suficiente";
-    return `Brier ${num(metrics.brier)} · AUC ${num(metrics.auc)} · teste ${metrics.test_samples ?? "—"}`;
+    if (!metrics) return "Not enough backtest";
+    // raw_auc is the model before shrinking toward the base rate; overlapping
+    // horizons make the test set look bigger than it is
+    const eff = metrics.effective_samples;
+    const independent = eff != null && eff < metrics.test_samples ? ` (~${Math.round(eff)} independent)` : "";
+    return `Brier ${num(metrics.brier)} · AUC ${num(metrics.raw_auc ?? metrics.auc)} · test ${metrics.test_samples ?? "—"}${independent}`;
   }
 
   function renderForecast(item) {
     if (item.status !== "ok") {
       return `<article class="forecast-card insufficient">
-        <div class="forecast-kind">${escapeHtml(label(KIND, item.kind))} · ${escapeHtml(item.horizon)}</div>
+        <div class="forecast-kind">${escapeHtml(label(item.kind))} · ${escapeHtml(item.horizon)}</div>
         <h4>${escapeHtml(item.title)}</h4>
-        <div class="forecast-prob">Dados insuficientes</div>
-        <p>${escapeHtml(item.reason || `${item.samples || 0} observações; evento raro ou cobertura incompleta.`)}</p>
+        <div class="forecast-prob">Not enough data</div>
+        <p>${escapeHtml(item.reason || `${item.samples || 0} observations; rare event or incomplete coverage.`)}</p>
       </article>`;
     }
     const drivers = (item.drivers || []).slice(0, 4).map(driver =>
       `<li class="${driver.impact >= 0 ? "up" : "down"}">${escapeHtml(driver.name.replaceAll("_", " "))}</li>`).join("");
     return `<article class="forecast-card">
-      <div class="forecast-kind">${escapeHtml(label(KIND, item.kind))} · ${escapeHtml(item.horizon)}</div>
+      <div class="forecast-kind">${escapeHtml(label(item.kind))} · ${escapeHtml(item.horizon)}</div>
       <h4>${escapeHtml(item.title)}</h4>
       <div class="forecast-prob">${pct(item.probability)}</div>
-      <div class="forecast-range">intervalo ${pct(item.interval?.[0])}–${pct(item.interval?.[1])}</div>
+      <div class="forecast-range">range ${pct(item.interval?.[0])}–${pct(item.interval?.[1])}</div>
       <p>${escapeHtml(item.description)}</p>
-      <div class="metric-line">Qualidade ${escapeHtml(item.quality ? label(QUALITY, item.quality) : "não classificada")} · ${metricLine(item.metrics)}</div>
-      <details><summary>Fatores dominantes</summary><ul class="driver-list">${drivers}</ul></details>
+      <div class="metric-line">Quality ${escapeHtml(item.quality || "unrated")} · ${metricLine(item.metrics)}</div>
+      <details><summary>Main drivers</summary><ul class="driver-list">${drivers}</ul></details>
     </article>`;
   }
 
@@ -72,7 +71,7 @@
       return `<article class="scenario-card"><strong>${escapeHtml(scenario.name)}</strong>
         <p>${escapeHtml(scenario.assumption)}</p><ul>${rows}</ul>
         <small>${escapeHtml(scenario.limitation)}</small></article>`;
-    }).join("") : `<p class="empty-state">Sem intervalos suficientes para cenários.</p>`;
+    }).join("") : `<p class="empty-state">Not enough intervals for scenarios.</p>`;
   }
 
   function renderSimilarEpisodes(data) {
@@ -80,12 +79,12 @@
     el("similarEpisodes").innerHTML = episodes.length ? episodes.map(item => {
       const outcome = item.observed_outcome || {};
       return `<article class="episode-row">
-        <div><strong>${escapeHtml(item.date)}</strong><small>similaridade ${pct(item.similarity)}</small></div>
-        <div><span>Recessão 12m: ${outcome.recession_12m == null ? "—" : outcome.recession_12m ? "sim" : "não"}</span>
+        <div><strong>${escapeHtml(item.date)}</strong><small>similarity ${pct(item.similarity)}</small></div>
+        <div><span>Recession 12m: ${outcome.recession_12m == null ? "—" : outcome.recession_12m ? "yes" : "no"}</span>
         <span>S&P 6m: ${outcome.sp500_6m == null ? "—" : pct(outcome.sp500_6m)}</span>
         <span>BTC 6m: ${outcome.btc_6m == null ? "—" : pct(outcome.btc_6m)}</span></div>
       </article>`;
-    }).join("") : `<p class="empty-state">Cobertura insuficiente para localizar episódios comparáveis.</p>`;
+    }).join("") : `<p class="empty-state">Not enough coverage to find comparable episodes.</p>`;
   }
 
   function renderCalibration(forecastId) {
@@ -93,17 +92,17 @@
     const points = item?.calibration || [];
     if (!points.length) {
       Plotly.purge(el("calibrationChart"));
-      el("calibrationSummary").textContent = "Sem pontos fora da amostra suficientes.";
+      el("calibrationSummary").textContent = "Not enough out-of-sample points.";
       return;
     }
     Plotly.newPlot(el("calibrationChart"), [
-      {x: [0, 1], y: [0, 1], mode: "lines", name: "calibração perfeita",
+      {x: [0, 1], y: [0, 1], mode: "lines", name: "perfect calibration",
        line: {color: "#565f6b", dash: "dot"}},
       {x: points.map(row => row.predicted), y: points.map(row => row.observed),
-       mode: "lines+markers", name: "observado", line: {color: "#F7931A"}},
-    ], chartLayout("Probabilidade prevista", "Frequência observada"), chartConfig);
+       mode: "lines+markers", name: "observed", line: {color: "#F7931A"}},
+    ], chartLayout("Predicted probability", "Observed frequency"), chartConfig);
     el("calibrationSummary").textContent =
-      `${item.title} · ${points.length} faixas · ${item.metrics?.test_samples || 0} previsões fora da amostra.`;
+      `${item.title} · ${points.length} bins · ${item.metrics?.test_samples || 0} out-of-sample forecasts.`;
   }
 
   function renderHistory(seriesId) {
@@ -111,14 +110,14 @@
     const points = series?.points || [];
     if (!points.length) {
       Plotly.purge(el("historyChart"));
-      el("historySummary").textContent = "O histórico será preenchido nas próximas execuções válidas.";
+      el("historySummary").textContent = "The history fills in with the next valid runs.";
       return;
     }
     Plotly.newPlot(el("historyChart"), [{
       x: points.map(row => row.date), y: points.map(row => row.probability),
       mode: "lines+markers", name: series.title, line: {color: "#58a6ff"},
-    }], chartLayout("Execução", "Probabilidade"), chartConfig);
-    el("historySummary").textContent = `${series.title} · ${points.length} registros persistidos.`;
+    }], chartLayout("Run", "Probability"), chartConfig);
+    el("historySummary").textContent = `${series.title} · ${points.length} saved runs.`;
   }
 
   function setupCharts(data) {
@@ -136,8 +135,8 @@
 
   function render(data) {
     payload = data;
-    const generated = new Date(data.generated_at).toLocaleString("pt-BR");
-    el("predictMeta").textContent = `Atualizado em ${generated} · ${data.coverage.sources_ok}/${data.coverage.sources_total} fontes · mercado ${data.coverage.market_start}–${data.coverage.market_end}`;
+    const generated = new Date(data.generated_at).toLocaleString("en-US");
+    el("predictMeta").textContent = `Updated ${generated} · ${data.coverage.sources_ok}/${data.coverage.sources_total} sources · market ${data.coverage.market_start}–${data.coverage.market_end}`;
     el("predictWarnings").innerHTML = (data.warnings || []).map(text => `<div class="predict-warning">${escapeHtml(text)}</div>`).join("");
     el("forecastCards").innerHTML = data.forecasts.map(renderForecast).join("");
     renderScenarios(data);
@@ -145,18 +144,18 @@
     setupCharts(data);
     el("benchmarkList").innerHTML = data.benchmarks.map(item => `<article class="benchmark-row">
       <div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.horizon)}</small></div>
-      <b>${item.probability != null ? pct(item.probability) : item.value != null ? num(item.value) : item.status === "insufficient_data" ? "amostra insuficiente" : "—"}</b>
+      <b>${item.probability != null ? pct(item.probability) : item.value != null ? num(item.value) : item.status === "insufficient_data" ? "not enough sample" : "—"}</b>
     </article>`).join("");
     el("indicatorGrid").innerHTML = data.indicators.map(item => `<article class="indicator">
       <span>${escapeHtml(item.name)}</span><strong>${num(item.value)}${escapeHtml(item.unit)}</strong>
       <small>${item.change == null ? "—" : `${item.change >= 0 ? "+" : ""}${num(item.change)}`} · ${escapeHtml(item.date)}</small>
     </article>`).join("");
     el("methodology").innerHTML = Object.entries(data.methodology).map(([key, value]) =>
-      `<div class="method-row"><strong>${escapeHtml(label(METHOD, key))}</strong><span>${escapeHtml(value)}</span></div>`).join("");
+      `<div class="method-row"><strong>${escapeHtml(label(key))}</strong><span>${escapeHtml(value)}</span></div>`).join("");
     const sources = [...Object.entries(data.sources.market), ...Object.entries(data.sources.macro)];
-    el("sourceStatus").innerHTML = `<div class="source-table-wrap" role="region" aria-label="Estado e governança das fontes" tabindex="0"><table class="source-table"><thead><tr><th>Série</th><th>Fonte</th><th>Estado</th><th>Referência</th><th>Revisável</th></tr></thead><tbody>${sources.map(([key, source]) => {
+    el("sourceStatus").innerHTML = `<div class="source-table-wrap" role="region" aria-label="Data sources and governance" tabindex="0"><table class="source-table"><thead><tr><th>Series</th><th>Source</th><th>Status</th><th>Reference</th><th>Revisable</th></tr></thead><tbody>${sources.map(([key, source]) => {
       const governance = source.governance || {};
-      return `<tr><td>${escapeHtml(source.label || key)}</td><td>${escapeHtml(source.source)}</td><td class="${source.ok ? "source-ok" : "source-fail"}">${source.ok ? "OK" : "Falhou"}</td><td>${escapeHtml(source.last_date || source.error || "—")}</td><td>${governance.revisable == null ? "—" : governance.revisable ? "sim" : "não"}</td></tr>`;
+      return `<tr><td>${escapeHtml(source.label || key)}</td><td>${escapeHtml(source.source)}</td><td class="${source.ok ? "source-ok" : "source-fail"}">${source.ok ? "OK" : "Failed"}</td><td>${escapeHtml(source.last_date || source.error || "—")}</td><td>${governance.revisable == null ? "—" : governance.revisable ? "yes" : "no"}</td></tr>`;
     }).join("")}</tbody></table></div>`;
   }
 
@@ -175,10 +174,10 @@
       indicators: payload.indicators,
       warnings: payload.warnings,
     };
-    const text = `Analise o quadro quantitativo abaixo. Separe fatos, inferências e incertezas; não trate correlação como causalidade nem dê recomendação financeira.\n\n${JSON.stringify(compact, null, 2)}`;
+    const text = `Go through the quantitative picture below. Keep facts, inferences and uncertainty apart; don't treat correlation as causation and don't give financial advice.\n\n${JSON.stringify(compact, null, 2)}`;
     navigator.clipboard.writeText(text).then(() => {
       [el("btnCopyAi"), el("btnCopyAiSide")].forEach(button => {
-        const old = button.textContent; button.textContent = "Contexto copiado";
+        const old = button.textContent; button.textContent = "Context copied";
         setTimeout(() => button.textContent = old, 1800);
       });
     });
@@ -186,13 +185,13 @@
 
   document.querySelectorAll(".side-tab").forEach(button => button.addEventListener("click", () => setView(button.dataset.view)));
   // deep link, e.g. index.html#predictor
-  if (location.hash === "#predictor") setView("preditor");
+  if (location.hash === "#predictor") setView("predictor");
   el("btnCopyAi").addEventListener("click", aiContext);
   el("btnCopyAiSide").addEventListener("click", aiContext);
   fetch("predictor.json", {cache:"no-store"}).then(response => {
     if (!response.ok) throw new Error(`predictor.json: HTTP ${response.status}`);
     return response.json();
   }).then(render).catch(error => {
-    el("predictMeta").textContent = `Preditor ainda não gerado: ${error.message}. Rode python predictor.py.`;
+    el("predictMeta").textContent = `No predictor output yet: ${error.message}. Run python predictor.py.`;
   });
 })();
