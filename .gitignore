@@ -1,17 +1,8 @@
 __pycache__/
 *.py[cod]
 *.log
-*.lock
 .env
 .env.*
 *_key.txt
-*.key
-*.pem
 .venv/
 venv/
-briefing/dados/vigia_estado.json
-briefing/dados/calendario_visto.json
-briefing/dados/briefing_auto.log
-briefing/dados/vigia.log
-briefing/dados/vigia.lock
-
