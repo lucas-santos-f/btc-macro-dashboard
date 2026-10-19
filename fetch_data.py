@@ -1,12 +1,10 @@
-"""
-Baixa todas as series registradas em fontes.py e grava web/data.json.
+"""Download every series in sources.py and write web/data.json.
 
-Uso:
-    python fetch_data.py            # ultimos 7 anos
-    python fetch_data.py --anos 10
+    python fetch_data.py             # last 7 years
+    python fetch_data.py --years 10
 
-O dashboard le apenas o data.json gerado aqui: o navegador nao faz nenhuma
-chamada de rede. Este script e a unica saida de rede do projeto.
+The dashboard only reads the data.json written here, the browser makes no
+network calls at all. This script is the only thing that talks to the outside.
 """
 
 import argparse
@@ -18,96 +16,93 @@ from pathlib import Path
 
 import pandas as pd
 
-from fontes import ADAPTADORES, GRUPOS, SERIES, calcula_derivadas
+from sources import ADAPTERS, GROUPS, SERIES, derived_series
 
-RAIZ = Path(__file__).resolve().parent
-SAIDA = RAIZ / "web" / "data.json"
+ROOT = Path(__file__).resolve().parent
+OUT = ROOT / "web" / "data.json"
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--anos", type=int, default=7)
+    ap.add_argument("--years", type=int, default=7)
     args = ap.parse_args()
 
-    fim = pd.Timestamp.today().normalize() + pd.Timedelta(days=1)
-    inicio = fim - pd.DateOffset(years=args.anos)
-    print(f"Janela: {inicio.date()} -> {fim.date()}\n")
+    end = pd.Timestamp.today().normalize() + pd.Timedelta(days=1)
+    start = end - pd.DateOffset(years=args.years)
+    print(f"window: {start.date()} -> {end.date()}\n")
 
-    # agrupa por fonte para minimizar requisicoes
-    por_fonte = defaultdict(list)
+    by_source = defaultdict(list)
     for s in SERIES:
-        if s["fonte"] != "derivada":
-            por_fonte[s["fonte"]].append(s["id"])
+        if s["source"] != "derived":
+            by_source[s["source"]].append(s["id"])
 
-    bruto = pd.DataFrame()
-    for fonte, ids in por_fonte.items():
+    raw = pd.DataFrame()
+    for source, ids in by_source.items():
         ids = list(dict.fromkeys(ids))
-        print(f"  {fonte} ({len(ids)})...", flush=True)
+        print(f"  {source} ({len(ids)})...", flush=True)
         try:
-            df = ADAPTADORES[fonte](ids, inicio, fim)
+            df = ADAPTERS[source](ids, start, end)
         except Exception as e:
-            print(f"    FALHOU: {type(e).__name__}: {e}", file=sys.stderr)
+            # one dead source shouldn't take the other 30 series down with it
+            print(f"    FAILED: {type(e).__name__}: {e}", file=sys.stderr)
             continue
         if df is None or df.empty:
-            print("    vazio", file=sys.stderr)
+            print("    empty", file=sys.stderr)
             continue
         df.index = pd.DatetimeIndex(df.index).tz_localize(None).normalize()
         df = df[~df.index.duplicated(keep="last")]
-        bruto = df if bruto.empty else bruto.join(df, how="outer")
+        raw = df if raw.empty else raw.join(df, how="outer")
 
-    if bruto.empty:
-        print("Nenhuma fonte respondeu.", file=sys.stderr)
+    if raw.empty:
+        print("No source answered.", file=sys.stderr)
         return 1
 
-    for nome, serie in calcula_derivadas(bruto).items():
-        bruto[nome] = serie
+    for name, s in derived_series(raw).items():
+        raw[name] = s
 
-    # Eixo temporal comum em dias uteis: o BTC negocia 7 dias/semana e os
-    # mercados tradicionais so em pregao. O ffill cobre feriados; nulos que
-    # sobram no inicio sao mantidos (a serie ainda nao existia) e o dashboard
-    # trata isso ao normalizar.
-    grade = pd.bdate_range(inicio, bruto.index.max())
-    bruto = bruto.reindex(bruto.index.union(grade)).ffill().reindex(grade)
-    bruto = bruto.loc[bruto.index >= inicio]
+    # BTC trades 7 days a week, everything else only on business days. Put it
+    # all on a business-day grid; ffill covers holidays, leading NaNs stay
+    # (the series didn't exist yet) and the dashboard handles them when rebasing
+    grid = pd.bdate_range(start, raw.index.max())
+    raw = raw.reindex(raw.index.union(grid)).ffill().reindex(grid)
+    raw = raw.loc[raw.index >= start]
 
-    series_out, faltando = [], []
+    series_out, missing = [], []
     for s in SERIES:
         col = s["id"]
-        if col not in bruto.columns or bruto[col].notna().sum() == 0:
-            faltando.append(s["label"])
+        if col not in raw.columns or raw[col].notna().sum() == 0:
+            missing.append(s["label"])
             continue
-        v = bruto[col]
-        if s.get("escala"):
-            v = v * s["escala"]
+        v = raw[col]
+        if s.get("scale"):
+            v = v * s["scale"]
         series_out.append({
-            "key": s["key"], "label": s["label"], "grupo": s["grupo"],
-            "eixo": s["eixo"], "cor": s["cor"],
-            "prefixo": s.get("prefixo", ""), "sufixo": s.get("sufixo", ""),
-            "casas": s.get("casas", 2), "padrao": bool(s.get("padrao")),
-            "fonte": s["fonte"],
-            "valores": [None if pd.isna(x) else round(float(x), 6) for x in v],
+            "key": s["key"], "label": s["label"], "group": s["group"],
+            "axis": s["axis"], "color": s["color"],
+            "prefix": s.get("prefix", ""), "suffix": s.get("suffix", ""),
+            "decimals": s.get("decimals", 2), "default": bool(s.get("default")),
+            "source": s["source"],
+            "values": [None if pd.isna(x) else round(float(x), 6) for x in v],
         })
 
-    grupos_usados = {s["grupo"] for s in series_out}
+    used_groups = {s["group"] for s in series_out}
     payload = {
-        "gerado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "inicio": bruto.index.min().strftime("%Y-%m-%d"),
-        "fim": bruto.index.max().strftime("%Y-%m-%d"),
-        "n": len(bruto),
-        "datas": [d.strftime("%Y-%m-%d") for d in bruto.index],
-        "grupos": [g for g in GRUPOS if g["id"] in grupos_usados],
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "start": raw.index.min().strftime("%Y-%m-%d"),
+        "end": raw.index.max().strftime("%Y-%m-%d"),
+        "n": len(raw),
+        "dates": [d.strftime("%Y-%m-%d") for d in raw.index],
+        "groups": [g for g in GROUPS if g["id"] in used_groups],
         "series": series_out,
     }
 
-    SAIDA.parent.mkdir(parents=True, exist_ok=True)
-    SAIDA.write_text(json.dumps(payload, ensure_ascii=False,
-                                separators=(",", ":")), encoding="utf-8")
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
-    print(f"\nOK  {payload['inicio']} -> {payload['fim']}  {payload['n']} dias úteis")
-    print(f"    {len(series_out)} séries em {len(payload['grupos'])} grupos  "
-          f"({SAIDA.stat().st_size / 1024:.0f} KB)")
-    if faltando:
-        print(f"    sem dados: {', '.join(faltando)}", file=sys.stderr)
+    print(f"\nok  {payload['start']} -> {payload['end']}  {payload['n']} business days")
+    print(f"    {len(series_out)} series in {len(payload['groups'])} groups ({OUT.stat().st_size / 1024:.0f} KB)")
+    if missing:
+        print(f"    no data: {', '.join(missing)}", file=sys.stderr)
     return 0
 
 

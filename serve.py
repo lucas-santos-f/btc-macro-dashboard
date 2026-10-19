@@ -1,16 +1,11 @@
-"""
-Servidor local do dashboard.
+"""Local server for the dashboard.
 
-Postura de seguranca (intencional, nao mexer sem querer o efeito):
-  * bind fixo em 127.0.0.1 -> so processos DESTA maquina alcancam. Nao e
-    acessivel pela rede local nem pela internet, independente do firewall.
-  * serve apenas arquivos estaticos de web/. Nao ha rota POST, webhook,
-    callback ou qualquer caminho que aceite comando de terceiro.
-  * nenhuma chamada de rede de saida: o navegador le somente data.json local.
+    python serve.py                       # port 8765, opens the browser
+    python serve.py --port 9000 --no-browser
 
-Uso:
-    python serve.py            # porta 8765, abre o navegador
-    python serve.py --porta 9000 --sem-navegador
+Deliberately boring: binds to 127.0.0.1 only (not reachable from the LAN or
+the internet regardless of firewall), serves static files from web/ and
+nothing else. No POST route, no webhook, nothing a third party can trigger.
 """
 
 import argparse
@@ -20,16 +15,14 @@ import webbrowser
 from functools import partial
 from pathlib import Path
 
-HOST = "127.0.0.1"  # nunca 0.0.0.0
+HOST = "127.0.0.1"  # never 0.0.0.0
 WEB = Path(__file__).resolve().parent / "web"
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
-    """Estatico, sem cache, sem log ruidoso."""
-
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
-        # o dashboard e 100% local; proibir qualquer recurso externo
+        # everything is local, plotly is vendored; block any external resource
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
@@ -38,44 +31,40 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_request(self, code="-", size="-"):
-        if not str(code).startswith("2"):  # so ruido de verdade (4xx/5xx)
+        if not str(code).startswith("2"):  # only log what's actually wrong
             sys.stderr.write(f"  {code}  {self.requestline}\n")
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--porta", type=int, default=8765)
-    ap.add_argument("--sem-navegador", action="store_true")
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args()
 
     if not (WEB / "data.json").exists():
-        print("data.json nao encontrado. Rode primeiro:  python fetch_data.py",
-              file=sys.stderr)
+        print("web/data.json not found, run:  python fetch_data.py", file=sys.stderr)
         return 1
 
     try:
-        srv = http.server.ThreadingHTTPServer(
-            (HOST, args.porta), partial(Handler, directory=str(WEB))
-        )
+        srv = http.server.ThreadingHTTPServer((HOST, args.port), partial(Handler, directory=str(WEB)))
     except OSError as e:
+        # EADDRINUSE is 48 on macOS, 98 on Linux, 10048 on Windows
         if e.errno in (48, 98, 10048):
-            print(f"Porta {args.porta} ja em uso. Tente:  python serve.py --porta {args.porta + 1}",
-                  file=sys.stderr)
+            print(f"Port {args.port} is taken, try:  python serve.py --port {args.port + 1}", file=sys.stderr)
             return 1
         raise
 
-    url = f"http://{HOST}:{args.porta}/"
-    print(f"\n  Dashboard em {url}")
-    print(f"  Acessivel somente desta maquina ({HOST}).")
-    print("  Ctrl+C para parar.\n")
+    url = f"http://{HOST}:{args.port}/"
+    print(f"\n  dashboard at {url}  (this machine only)")
+    print("  Ctrl+C to stop\n")
 
-    if not args.sem_navegador:
+    if not args.no_browser:
         webbrowser.open(url)
 
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
-        print("\n  Encerrado.")
+        print("\n  bye")
     finally:
         srv.server_close()
     return 0
