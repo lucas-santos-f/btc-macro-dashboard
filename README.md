@@ -2,7 +2,7 @@
 
 Dashboard that puts Bitcoin next to on-chain metrics, US indices, rates and commodities (34 daily series, 7 years), plus a calibrated predictor for US recession, S&P 500 drawdowns and short-term market direction.
 
-Live: https://lucas-santos-f.github.io/btc-macro-dashboard/ (rebuilt every weekday after the US close).
+Live: https://satscope.pages.dev (rebuilt every weekday after the US close).
 
 ![market view](docs/market.png)
 

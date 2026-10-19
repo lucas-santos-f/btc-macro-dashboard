@@ -327,6 +327,16 @@ class PredictorTests(unittest.TestCase):
             result = subprocess.run([node, "--check", str(js)], capture_output=True, text=True, check=False)
             self.assertEqual(result.returncode, 0, f"{js.name}: {result.stderr}")
 
+    def test_bea_key_not_in_error(self):
+        key = "0000AAAA-1111-2222-3333-444455556666"
+        failure = predictor.requests.ConnectionError(f"Max retries exceeded with url: /api/data/?UserID={key}&method=GetData")
+        with mock.patch.dict(predictor.os.environ, {"BEA_API_KEY": key}),                 mock.patch.object(predictor.requests, "get", side_effect=failure):
+            _, status = predictor.fetch_bea_direct(list(predictor.BEA_DIRECT)[:2])
+        self.assertTrue(status)
+        for item in status.values():
+            self.assertFalse(item["ok"])
+            self.assertNotIn(key, item["error"])
+
     def test_server_loopback_only(self):
         server = (Path(__file__).parent / "serve.py").read_text(encoding="utf-8")
         self.assertIn('HOST = "127.0.0.1"', server)

@@ -437,10 +437,13 @@ def fetch_bea_direct(keys: list[str]) -> tuple[dict, dict]:
                 status[key] = {"ok": True, "source": "BEA API (direct)", "series_id": table,
                                "label": FRED[key][2], "last_date": str(series.index.max().date())}
         except Exception as exc:
+            # the key travels in the query string, so requests puts it in the
+            # message; this text ends up in the public predictor.json
+            message = str(exc).replace(api_key, "***")
             for key in group_keys:
                 if key not in out:
                     status[key] = {"ok": False, "source": "BEA API (direct)", "series_id": table,
-                                   "label": FRED[key][2], "error": str(exc)[:180]}
+                                   "label": FRED[key][2], "error": message[:180]}
     return out, status
 
 
