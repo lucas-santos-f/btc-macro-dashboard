@@ -185,6 +185,8 @@
   }
 
   document.querySelectorAll(".side-tab").forEach(button => button.addEventListener("click", () => setView(button.dataset.view)));
+  // deep link, e.g. index.html#predictor
+  if (location.hash === "#predictor") setView("preditor");
   el("btnCopyAi").addEventListener("click", aiContext);
   el("btnCopyAiSide").addEventListener("click", aiContext);
   fetch("predictor.json", {cache:"no-store"}).then(response => {
