@@ -3,8 +3,6 @@
 No paid keys. FRED series fall back to the agencies themselves (BLS, BEA,
 Treasury, DOL, Chicago Fed, OFR) when FRED is unreachable; the free BEA key
 is optional.
-
-UI strings in here (titles, descriptions) are Portuguese, the dashboard is.
 """
 
 from __future__ import annotations
@@ -40,8 +38,8 @@ OUTPUT = WEB / "predictor.json"
 HISTORY = ROOT / "predictor_history.csv"
 PREDICTOR_SCHEMA_VERSION = 4
 MODEL_VALIDATION_DESCRIPTION = (
-    "Walk-forward repetido com janelas expansivas; em cada dobra, treino, calibração isotônica "
-    "e teste são blocos contíguos, posteriores e sem sobreposição."
+    "Repeated walk-forward with expanding windows; in each fold, training, calibration "
+    "and test are contiguous, later and non-overlapping blocks."
 )
 UA = {"User-Agent": "btc-macro-dashboard/1.0 public research"}
 
@@ -64,24 +62,24 @@ FRED = {
     "cpi": ("CPIAUCSL", "BLS", "CPI"),
     "core_cpi": ("CPILFESL", "BLS", "Core CPI"),
     "ppi": ("PPIACO", "BLS", "PPI"),
-    "payroll": ("PAYEMS", "BLS", "Payroll não agrícola"),
-    "unemployment": ("UNRATE", "BLS", "Desemprego"),
-    "participation": ("CIVPART", "BLS", "Participação"),
-    "wages": ("CES0500000003", "BLS", "Salário médio por hora"),
-    "jolts": ("JTSJOL", "BLS", "Vagas JOLTS"),
+    "payroll": ("PAYEMS", "BLS", "Nonfarm payrolls"),
+    "unemployment": ("UNRATE", "BLS", "Unemployment"),
+    "participation": ("CIVPART", "BLS", "Participation rate"),
+    "wages": ("CES0500000003", "BLS", "Average hourly earnings"),
+    "jolts": ("JTSJOL", "BLS", "JOLTS openings"),
     "pce_price": ("PCEPI", "BEA", "PCE"),
     "core_pce": ("PCEPILFE", "BEA", "Core PCE"),
-    "real_gdp": ("GDPC1", "BEA", "PIB real"),
-    "real_income": ("DSPIC96", "BEA", "Renda disponível real"),
-    "consumption": ("PCE", "BEA", "Consumo pessoal"),
-    "claims": ("ICSA", "Department of Labor", "Pedidos de seguro-desemprego"),
-    "dgs10": ("DGS10", "U.S. Treasury", "Treasury 10 anos"),
-    "dgs3m": ("DGS3MO", "U.S. Treasury", "Treasury 3 meses"),
-    "real10": ("DFII10", "U.S. Treasury", "Juro real 10 anos"),
-    "hy_spread": ("BAMLH0A0HYM2", "ICE/BofA", "Spread high yield"),
-    "nfci": ("NFCI", "Chicago Fed", "Condições financeiras"),
-    "recession": ("USREC", "NBER", "Recessão NBER"),
-    "sahm_realtime": ("SAHMREALTIME", "Sahm/FRED", "Sahm Rule em tempo real"),
+    "real_gdp": ("GDPC1", "BEA", "Real GDP"),
+    "real_income": ("DSPIC96", "BEA", "Real disposable income"),
+    "consumption": ("PCE", "BEA", "Personal consumption"),
+    "claims": ("ICSA", "Department of Labor", "Initial jobless claims"),
+    "dgs10": ("DGS10", "U.S. Treasury", "10-year Treasury"),
+    "dgs3m": ("DGS3MO", "U.S. Treasury", "3-month Treasury"),
+    "real10": ("DFII10", "U.S. Treasury", "10-year real yield"),
+    "hy_spread": ("BAMLH0A0HYM2", "ICE/BofA", "High yield spread"),
+    "nfci": ("NFCI", "Chicago Fed", "Financial conditions (NFCI)"),
+    "recession": ("USREC", "NBER", "NBER recession"),
+    "sahm_realtime": ("SAHMREALTIME", "Sahm/FRED", "Real-time Sahm rule"),
 }
 
 BLS_DIRECT = {
@@ -100,9 +98,9 @@ BEA_DIRECT = {
 }
 
 TREASURY_DIRECT = {
-    "dgs10": ("daily_treasury_yield_curve", "BC_10YEAR", 1990, "Treasury 10 anos", "%"),
-    "dgs3m": ("daily_treasury_yield_curve", "BC_3MONTH", 1990, "Treasury 3 meses", "%"),
-    "real10": ("daily_treasury_real_yield_curve", "TC_10YEAR", 2003, "Juro real 10 anos", "%"),
+    "dgs10": ("daily_treasury_yield_curve", "BC_10YEAR", 1990, "10-year Treasury", "%"),
+    "dgs3m": ("daily_treasury_yield_curve", "BC_3MONTH", 1990, "3-month Treasury", "%"),
+    "real10": ("daily_treasury_real_yield_curve", "TC_10YEAR", 2003, "10-year real yield", "%"),
 }
 
 
@@ -130,15 +128,15 @@ RELEASE_METADATA = {
 }
 DEFAULT_MACRO_GOVERNANCE = {
     "revisable": True,
-    "date_kind": "período de referência/observação, não timestamp de divulgação",
+    "date_kind": "reference/observation period, not the release timestamp",
     "realtime_vintage": False,
-    "limitation": "A fonte corrente não fornece o vintage conhecido em cada data histórica.",
+    "limitation": "The current source doesn't provide the vintage known at each historical date.",
 }
 DEFAULT_MARKET_GOVERNANCE = {
     "revisable": False,
-    "date_kind": "data do fechamento observado",
+    "date_kind": "date of the observed close",
     "realtime_vintage": True,
-    "limitation": "Fechamentos podem sofrer correções operacionais da fonte, mas não revisão macroeconômica.",
+    "limitation": "Closes can get operational fixes from the source, but no macro revisions.",
 }
 
 TREASURY_URL = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml"
@@ -156,15 +154,15 @@ RECESSIONS = [
 
 NBER_EPISODES = [
     {
-        "id": "2000_2001", "name": "2000–2001 (dot-com / recessão de 2001)",
+        "id": "2000_2001", "name": "2000–2001 (dot-com / 2001 recession)",
         "start": "2001-03-01", "end": "2001-11-30",
     },
     {
-        "id": "2008", "name": "Crise financeira de 2008",
+        "id": "2008", "name": "2008 financial crisis",
         "start": "2007-12-01", "end": "2009-06-30",
     },
     {
-        "id": "2020", "name": "Recessão de 2020",
+        "id": "2020", "name": "2020 recession",
         "start": "2020-02-01", "end": "2020-04-30",
     },
 ]
@@ -242,8 +240,8 @@ def data_governance_summary(market_status: dict, macro_status: dict) -> dict:
             int(item.get("validation", {}).get("merged_duplicates", 0)) for item in states
         ),
         "vintage_note": (
-            "Datas macro são períodos de referência. Sem vintage em tempo real, backtests aplicam "
-            "defasagem conservadora de um mês e declaram a limitação de revisões."
+            "Macro dates are reference periods. With no real-time vintages, backtests apply a "
+            "conservative one-month lag and state the revision limitation."
         ),
     }
 
@@ -375,10 +373,10 @@ def fetch_bls_direct(keys: list[str]) -> tuple[dict, dict]:
         if points[key]:
             series = pd.Series(dict(points[key]), name=key).sort_index()
             out[key] = series
-            status[key] = {"ok": True, "source": "BLS API direta", "series_id": BLS_DIRECT[key],
+            status[key] = {"ok": True, "source": "BLS API (direct)", "series_id": BLS_DIRECT[key],
                            "label": FRED[key][2], "last_date": str(series.index.max().date())}
         else:
-            status[key] = {"ok": False, "source": "BLS API direta", "series_id": BLS_DIRECT[key],
+            status[key] = {"ok": False, "source": "BLS API (direct)", "series_id": BLS_DIRECT[key],
                            "label": FRED[key][2], "error": " | ".join(errors)[-300:] or "no data"}
     return out, status
 
@@ -408,12 +406,12 @@ def _parse_bea_rows(rows: list[dict], key: str) -> pd.Series:
 
 
 def fetch_bea_direct(keys: list[str]) -> tuple[dict, dict]:
-    """Fallback NIPA oficial; usa apenas a chave gratuita quando configurada."""
+    """Official NIPA fallback, only used when the free key is set."""
     api_key = os.getenv("BEA_API_KEY", "").strip()
     out, status = {}, {}
     if not api_key:
         for key in keys:
-            status[key] = {"ok": False, "source": "BEA API direta", "series_id": BEA_DIRECT[key][0],
+            status[key] = {"ok": False, "source": "BEA API (direct)", "series_id": BEA_DIRECT[key][0],
                            "label": FRED[key][2], "error": "BEA_API_KEY not set"}
         return out, status
     groups = {}
@@ -436,12 +434,12 @@ def fetch_bea_direct(keys: list[str]) -> tuple[dict, dict]:
                 if series.empty:
                     raise RuntimeError(f"{key}: NIPA line not found in {table}")
                 out[key] = series
-                status[key] = {"ok": True, "source": "BEA API direta", "series_id": table,
+                status[key] = {"ok": True, "source": "BEA API (direct)", "series_id": table,
                                "label": FRED[key][2], "last_date": str(series.index.max().date())}
         except Exception as exc:
             for key in group_keys:
                 if key not in out:
-                    status[key] = {"ok": False, "source": "BEA API direta", "series_id": table,
+                    status[key] = {"ok": False, "source": "BEA API (direct)", "series_id": table,
                                    "label": FRED[key][2], "error": str(exc)[:180]}
     return out, status
 
@@ -499,12 +497,12 @@ def fetch_treasury_direct(keys: list[str]) -> tuple[dict, dict]:
         if points[key]:
             series = pd.Series(dict(points[key]), name=key).sort_index()
             out[key] = series
-            status[key] = {"ok": True, "source": "U.S. Treasury XML direto",
+            status[key] = {"ok": True, "source": "U.S. Treasury XML (direct)",
                            "series_id": f"{dataset}:{field}", "label": label, "unit": unit,
                            "last_date": str(series.index.max().date()),
                            "partial_failures": len(errors)}
         else:
-            status[key] = {"ok": False, "source": "U.S. Treasury XML direto",
+            status[key] = {"ok": False, "source": "U.S. Treasury XML (direct)",
                            "series_id": f"{dataset}:{field}", "label": label,
                            "error": " | ".join(errors)[-300:] or "no data"}
     return out, status
@@ -529,11 +527,11 @@ def fetch_claims_direct(keys: list[str]) -> tuple[dict, dict]:
         series = pd.Series(points, name="claims", dtype=float).sort_index()
         if series.empty:
             raise RuntimeError("ETA 539 report has no national SA claims")
-        return {"claims": series}, {"claims": {"ok": True, "source": "U.S. DOL ETA direto",
+        return {"claims": series}, {"claims": {"ok": True, "source": "U.S. DOL ETA (direct)",
                 "series_id": "ETA 539 initial claims SA", "label": FRED["claims"][2],
-                "unit": " pedidos", "last_date": str(series.index.max().date())}}
+                "unit": " claims", "last_date": str(series.index.max().date())}}
     except Exception as exc:
-        return {}, {"claims": {"ok": False, "source": "U.S. DOL ETA direto",
+        return {}, {"claims": {"ok": False, "source": "U.S. DOL ETA (direct)",
                     "series_id": "ETA 539 initial claims SA", "label": FRED["claims"][2],
                     "error": str(exc)[:180]}}
 
@@ -550,11 +548,11 @@ def fetch_nfci_direct(keys: list[str]) -> tuple[dict, dict]:
         series = pd.Series(values.to_numpy(), index=index, name="nfci").dropna().sort_index()
         if series.empty:
             raise RuntimeError("NFCI csv has no rows")
-        return {"nfci": series}, {"nfci": {"ok": True, "source": "Chicago Fed direto",
-                "series_id": "NFCI", "label": FRED["nfci"][2], "unit": " índice",
+        return {"nfci": series}, {"nfci": {"ok": True, "source": "Chicago Fed (direct)",
+                "series_id": "NFCI", "label": FRED["nfci"][2], "unit": " index",
                 "last_date": str(series.index.max().date())}}
     except Exception as exc:
-        return {}, {"nfci": {"ok": False, "source": "Chicago Fed direto", "series_id": "NFCI",
+        return {}, {"nfci": {"ok": False, "source": "Chicago Fed (direct)", "series_id": "NFCI",
                     "label": FRED["nfci"][2], "error": str(exc)[:180]}}
 
 
@@ -570,13 +568,13 @@ def fetch_ofr_credit_direct(keys: list[str]) -> tuple[dict, dict]:
         series = pd.Series(values.to_numpy(), index=index, name="hy_spread").dropna().sort_index()
         if series.empty:
             raise RuntimeError("OFR FSI csv has no Credit column")
-        return {"hy_spread": series}, {"hy_spread": {"ok": True, "source": "OFR FSI direto",
-                "series_id": "OFR FSI:Credit", "label": "Estresse de crédito OFR (proxy)",
-                "unit": " índice", "proxy_for": FRED["hy_spread"][0],
+        return {"hy_spread": series}, {"hy_spread": {"ok": True, "source": "OFR FSI (direct)",
+                "series_id": "OFR FSI:Credit", "label": "OFR credit stress (proxy)",
+                "unit": " index", "proxy_for": FRED["hy_spread"][0],
                 "last_date": str(series.index.max().date())}}
     except Exception as exc:
-        return {}, {"hy_spread": {"ok": False, "source": "OFR FSI direto",
-                    "series_id": "OFR FSI:Credit", "label": "Estresse de crédito OFR (proxy)",
+        return {}, {"hy_spread": {"ok": False, "source": "OFR FSI (direct)",
+                    "series_id": "OFR FSI:Credit", "label": "OFR credit stress (proxy)",
                     "error": str(exc)[:180]}}
 
 
@@ -605,20 +603,28 @@ def recession_fallback(index: pd.DatetimeIndex) -> pd.Series:
 
 
 def daily_features(markets: pd.DataFrame, onchain: pd.DataFrame) -> pd.DataFrame:
+    # The index is BTC's calendar (7 days a week). Each series is computed on its
+    # own sessions and only then put on the calendar: done directly on the
+    # calendar, weekends broke every equity window (vol20 was NaN almost always).
     features = pd.DataFrame(index=markets.index)
     for col in markets.columns:
-        s = markets[col].replace(0, np.nan)
-        features[f"{col}_r1"] = np.log(s.where(s > 0)).diff()
+        s = markets[col].where(markets[col] > 0).dropna()
+        log_returns = np.log(s).diff()
+        features[f"{col}_r1"] = log_returns.reindex(features.index)
         for window in (5, 20, 60):
-            features[f"{col}_mom{window}"] = s.pct_change(window, fill_method=None)
-        features[f"{col}_vol20"] = np.log(s.where(s > 0)).diff().rolling(20).std() * math.sqrt(252)
+            features[f"{col}_mom{window}"] = s.pct_change(window, fill_method=None).reindex(features.index)
+        features[f"{col}_vol20"] = (log_returns.rolling(20).std() * math.sqrt(252)).reindex(features.index)
     if "sp500" in markets:
-        features["sp500_drawdown"] = markets["sp500"] / markets["sp500"].cummax() - 1
+        sp = markets["sp500"].dropna()
+        features["sp500_drawdown"] = (sp / sp.cummax() - 1).reindex(features.index)
     if {"t10", "t3m"} <= set(markets.columns):
         features["curve_10y_3m"] = markets["t10"] - markets["t3m"]
     if {"hyg", "tlt"} <= set(markets.columns):
-        features["credit_ratio"] = markets["hyg"] / markets["tlt"]
-        features["credit_mom20"] = features["credit_ratio"].pct_change(20, fill_method=None)
+        ratio = (markets["hyg"] / markets["tlt"]).dropna()
+        features["credit_ratio"] = ratio.reindex(features.index)
+        features["credit_mom20"] = ratio.pct_change(20, fill_method=None).reindex(features.index)
+    # a weekend row knows Friday's close, that's not lookahead. limit=4 covers long weekends
+    features = features.ffill(limit=4)
     if not onchain.empty:
         aligned = onchain.reindex(features.index).ffill()
         for col in aligned:
@@ -667,16 +673,23 @@ def future_any(binary: pd.Series, horizon: int) -> pd.Series:
 
 
 def future_direction(series: pd.Series, horizon: int) -> pd.Series:
-    return (series.shift(-horizon) / series > 1).astype(float).where(series.shift(-horizon).notna())
+    # Horizon in the asset's own sessions. On the calendar index a Sunday row did
+    # Monday / NaN > 1 -> False, a free "down" label on every weekend, and the
+    # equity models learned to spot weekends (AUC 0.8 on daily direction, and 1%
+    # on a Monday morning before the US open, which looks exactly like a Sunday).
+    s = series.dropna()
+    ahead = s.shift(-horizon)
+    return (ahead / s > 1).astype(float).where(ahead.notna()).reindex(series.index)
 
 
 def future_drawdown(series: pd.Series, horizon: int, threshold: float) -> pd.Series:
-    values = series.to_numpy(float)
+    s = series.dropna()
+    values = s.to_numpy(float)
     out = np.full(len(values), np.nan)
     for i in range(len(values) - horizon):
-        future_min = np.nanmin(values[i + 1:i + horizon + 1])
+        future_min = values[i + 1:i + horizon + 1].min()
         out[i] = float(future_min / values[i] - 1 <= threshold)
-    return pd.Series(out, index=series.index)
+    return pd.Series(out, index=s.index).reindex(series.index)
 
 
 def _models() -> tuple[Pipeline, Pipeline]:
@@ -728,10 +741,36 @@ def _rare_event_summary(y: pd.Series) -> dict:
         "non_events": negatives,
         "rate": safe_number(rate),
         "handling": (
-            "Pesos inversos de classe no boosting, regressão logística balanceada, "
-            "calibração somente em janela posterior ao treino e retração à taxa-base."
+            "Inverse class weights in boosting, balanced logistic regression, calibration "
+            "only on a window after training, and shrinkage toward the base rate."
         ),
     }
+
+
+# Isotonic needs plenty of both classes. Fed a window with a handful of one class
+# it learns a staircase from those few points, and everything past them lands
+# on the 1% floor. Under this many cases per class it's Platt scaling instead.
+MIN_ISOTONIC_CLASS = 30
+
+
+class PlattCalibrator:
+    method = "platt"
+
+    def fit(self, raw, y):
+        self.model = LogisticRegression(C=1.0).fit(np.asarray(raw).reshape(-1, 1), y)
+        return self
+
+    def predict(self, raw):
+        return self.model.predict_proba(np.asarray(raw).reshape(-1, 1))[:, 1]
+
+
+def _fit_calibrator(raw: np.ndarray, y) -> IsotonicRegression | PlattCalibrator:
+    y = np.asarray(y, dtype=int)
+    if min(int(y.sum()), int(len(y) - y.sum())) >= MIN_ISOTONIC_CLASS:
+        calibrator = IsotonicRegression(out_of_bounds="clip", y_min=.01, y_max=.99)
+        calibrator.method = "isotonic"
+        return calibrator.fit(raw, y)
+    return PlattCalibrator().fit(raw, y)
 
 
 def _balanced_sample_weight(y: pd.Series) -> np.ndarray:
@@ -757,12 +796,11 @@ def _fit_temporal_models(train_x: pd.DataFrame, train_y: pd.Series,
         logit.predict_proba(calibration_x)[:, 1]
         + boost.predict_proba(calibration_x)[:, 1]
     ) / 2
-    calibrator = IsotonicRegression(out_of_bounds="clip", y_min=.01, y_max=.99)
-    calibrator.fit(raw_calibration, calibration_y)
+    calibrator = _fit_calibrator(raw_calibration, calibration_y)
     return logit, boost, calibrator, usable
 
 
-def _predict_ensemble(logit: Pipeline, boost: Pipeline, calibrator: IsotonicRegression,
+def _predict_ensemble(logit: Pipeline, boost: Pipeline, calibrator,
                       frame: pd.DataFrame) -> np.ndarray:
     raw = (logit.predict_proba(frame)[:, 1] + boost.predict_proba(frame)[:, 1]) / 2
     return np.asarray(calibrator.predict(raw), dtype=float)
@@ -777,7 +815,7 @@ def _latest_temporal_partition(y: pd.Series, min_train: int, base_size: int) -> 
     return start if start < len(y) and y.iloc[start:].nunique() == 2 else None
 
 
-def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> dict:
+def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180, overlap: int = 1) -> dict:
     all_features = features.replace([np.inf, -np.inf], np.nan).copy()
     y = target.reindex(all_features.index)
     valid = y.notna() & all_features.notna().sum(axis=1).gt(0)
@@ -787,10 +825,15 @@ def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> 
         return {
             "status": "insufficient_data", "samples": int(len(frame)),
             "events": rare["events"], "rare_events": rare,
-            "reason": "amostra ou classe minoritária insuficiente para validação temporal",
+            "reason": "sample or minority class too small for temporal validation",
         }
 
-    splits = temporal_walk_forward_splits(len(frame), min_samples)
+    # crashes and recessions come in clusters: in 90-session blocks most windows see
+    # one class only and the folds get thrown away. Rare daily targets use a year
+    rate = float(y.mean())
+    block = 252 if min(rate, 1 - rate) < .25 and len(frame) > 2500 else None
+    splits = temporal_walk_forward_splits(len(frame), min_samples, max_folds=8 if block else 5,
+                                          calibration_size=block, test_size=block)
     predictions, actuals, dates, fold_meta = [], [], [], []
     for train_end, calibration_end, test_end in splits:
         train_x, train_y = frame.iloc[:train_end], y.iloc[:train_end]
@@ -822,24 +865,27 @@ def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> 
         return {
             "status": "insufficient_data", "samples": int(len(frame)),
             "events": rare["events"], "rare_events": rare,
-            "reason": "menos de duas dobras temporais válidas com ambas as classes no conjunto agregado",
+            "reason": "fewer than two valid temporal folds with both classes",
             "walk_forward": {"valid_folds": len(fold_meta), "folds": fold_meta},
         }
 
     pred_oos = np.asarray(predictions, dtype=float)
     actual_oos = np.asarray(actuals, dtype=int)
     preliminary_auc = roc_auc_score(actual_oos, pred_oos)
-    reliability = float(np.clip((preliminary_auc - .50) / .20, 0, 1))
+    # overlapping labels: 270 test days of a 60-session target are about 4 separate
+    # outcomes, and an AUC of 0.84 on that said "high quality" with a 97% forecast
+    effective = len(actual_oos) / max(1, overlap)
+    reliability = float(np.clip((preliminary_auc - .50) / .20, 0, 1)) * min(1.0, effective / 30)
     base_rate = float(y.mean())
     pred_oos = np.clip(reliability * pred_oos + (1 - reliability) * base_rate, .001, .999)
 
-    final_calibration_size = max(12, min(90, len(frame) // 10))
+    final_calibration_size = block or max(12, min(90, len(frame) // 10))
     final_start = _latest_temporal_partition(y, min_samples, final_calibration_size)
     if final_start is None:
         return {
             "status": "insufficient_data", "samples": int(len(frame)),
             "events": rare["events"], "rare_events": rare,
-            "reason": "janela temporal final sem as duas classes para calibração",
+            "reason": "the last window is missing a class, nothing to calibrate on",
             "walk_forward": {"valid_folds": len(fold_meta), "folds": fold_meta},
         }
     final_train_x, final_train_y = frame.iloc[:final_start], y.iloc[:final_start]
@@ -859,7 +905,7 @@ def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> 
     if current_candidates.empty:
         return {"status": "insufficient_data", "samples": int(len(frame)),
                 "events": rare["events"], "rare_events": rare,
-                "reason": "sem observação atual utilizável"}
+                "reason": "no usable current observation"}
     current_x = current_candidates.iloc[[-1]][usable]
     calibrated_current = float(_predict_ensemble(logit, boost, calibrator, current_x)[0])
     probability = float(np.clip(
@@ -875,9 +921,12 @@ def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> 
         "base_rate": safe_number(base_rate), "model_confidence": safe_number(reliability),
         "test_samples": int(len(actual_oos)), "total_samples": int(len(frame)),
         "events": rare["events"], "folds": len(fold_meta),
+        "raw_auc": safe_number(preliminary_auc), "effective_samples": safe_number(effective, 1),
     }
     auc = metrics["auc"] or 0
     quality = "high" if auc >= .70 and brier <= .20 else "moderate" if auc >= .58 else "low"
+    if effective < 30:
+        quality = "low"
     bins = min(8, max(3, len(actual_oos) // 25))
     observed, predicted = calibration_curve(actual_oos, pred_oos, n_bins=bins, strategy="quantile")
     calibration = [{"predicted": safe_number(p), "observed": safe_number(o)}
@@ -905,12 +954,12 @@ def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> 
         "last_observation": str(current_candidates.index[-1].date()),
         "rare_events": rare,
         "walk_forward": {
-            "method": "janela expansiva; calibração e teste contíguos posteriores ao treino",
+            "method": "expanding window; calibration and test contiguous and after training",
             "valid_folds": len(fold_meta), "folds": fold_meta,
             "out_of_sample": int(len(actual_oos)),
         },
         "temporal_calibration": {
-            "method": "isotônica",
+            "method": calibrator.method,
             "train_end": str(final_train_x.index[-1].date()),
             "calibration_start": str(final_calibration_x.index[0].date()),
             "calibration_end": str(final_calibration_x.index[-1].date()),
@@ -988,14 +1037,14 @@ def recession_comparisons(monthly: pd.DataFrame, markets: pd.DataFrame) -> list[
             "id": episode["id"], "name": episode["name"],
             "nber_period": [str(recession_start.date()), str(recession_end.date())],
             "analysis_window": [str(analysis_start.date()), str(analysis_end.date())],
-            "window_rule": "12 meses antes do início NBER até 6 meses após o fim NBER",
+            "window_rule": "12 months before the NBER start to 6 months after the NBER end",
             "assets": assets, "curve_10y_3m": curve,
             "coverage": "complete" if not missing else "partial",
             "missing_series": missing,
             "origin": {
                 "recessions": "NBER Business Cycle Dating Committee",
                 "url": NBER_SOURCE_URL,
-                "markets": "Yahoo Finance; somente fechamentos existentes na cobertura coletada",
+                "markets": "Yahoo Finance; only closes present in the collected coverage",
             },
         })
     return output
@@ -1020,14 +1069,14 @@ def btc_cycle_comparisons(markets: pd.DataFrame) -> list[dict]:
         observed_start = pd.Timestamp(metrics["observed_start"])
         complete_start = abs((observed_start - start).days) <= 7
         output.append({
-            "id": f"halving_{block}", "name": f"Ciclo após halving do bloco {block}",
+            "id": f"halving_{block}", "name": f"Cycle after the block {block} halving",
             "start": str(start.date()), "end": str(end.date()),
             "complete_since_halving": complete_start,
             "metrics": metrics,
-            "origin": "Bitcoin blockchain: timestamp público do bloco de halving; preços Yahoo Finance",
+            "origin": "Bitcoin blockchain: public timestamp of the halving block; Yahoo Finance prices",
             "limitation": (
                 None if complete_start
-                else "A série de preços disponível começa depois do halving; métricas cobrem só o trecho observado."
+                else "The available price series starts after the halving; metrics only cover the observed stretch."
             ),
         })
     return output
@@ -1038,9 +1087,9 @@ def build_historical_benchmarks(monthly: pd.DataFrame, markets: pd.DataFrame) ->
         "recessions": recession_comparisons(monthly, markets),
         "btc_cycles": btc_cycle_comparisons(markets),
         "limitations": [
-            "Comparações são descritivas e não implicam repetição do episódio.",
-            "Valores ausentes permanecem nulos; não há interpolação nem reconstrução de preços.",
-            "Datas de recessão seguem o NBER; janelas de mercado são regras analíticas declaradas.",
+            "Comparisons are descriptive, they don't imply the episode will repeat.",
+            "Missing values stay null; no interpolation or price reconstruction.",
+            "Recession dates follow the NBER; market windows are declared analysis rules.",
         ],
     }
 
@@ -1096,7 +1145,7 @@ def find_similar_episodes(features: pd.DataFrame, recession: pd.Series,
             "similarity": safe_number(1 / (1 + distance)),
             "compared_variables": int(history.loc[date].notna().sum()),
             "observed_outcome": outcomes,
-            "note": "Similaridade padronizada; seleção usa apenas datas anteriores ao horizonte reservado.",
+            "note": "Standardized similarity; only dates before the held-out horizon are used.",
         })
         if len(selected) >= limit:
             break
@@ -1106,18 +1155,18 @@ def find_similar_episodes(features: pd.DataFrame, recession: pd.Series,
 def build_statistical_scenarios(forecasts: list[dict]) -> list[dict]:
     # scenarios are just the interval bounds already computed, no made-up assumptions
     usable = [item for item in forecasts if item.get("status") == "ok" and item.get("interval")]
-    preferred = ["recession_12m", "sp_stress_90d", "btc_alta_60d"]
+    preferred = ["recession_12m", "sp_stress_90d", "btc_up_60d"]
     chosen = [next((item for item in usable if item["id"] == key), None) for key in preferred]
     chosen = [item for item in chosen if item is not None]
     if not chosen:
         chosen = usable[:3]
     definitions = [
-        ("lower", "Limite inferior", 0,
-         "Limite inferior do intervalo estatístico de cada previsão."),
-        ("central", "Estimativa central", None,
-         "Probabilidade central calibrada pelo backtest walk-forward."),
-        ("upper", "Limite superior", 1,
-         "Limite superior do intervalo estatístico de cada previsão."),
+        ("lower", "Lower bound", 0,
+         "Lower end of each forecast's statistical interval."),
+        ("central", "Central estimate", None,
+         "Central probability, calibrated by the walk-forward backtest."),
+        ("upper", "Upper bound", 1,
+         "Upper end of each forecast's statistical interval."),
     ]
     scenarios = []
     for scenario_id, name, bound, assumption in definitions:
@@ -1131,7 +1180,7 @@ def build_statistical_scenarios(forecasts: list[dict]) -> list[dict]:
         scenarios.append({
             "id": scenario_id, "name": name, "kind": "statistical_band",
             "assumption": assumption, "forecasts": values,
-            "limitation": "Não representa consenso nem cenário causal; apenas a incerteza estimada do modelo.",
+            "limitation": "Not a consensus or a causal scenario, just the model's estimated uncertainty.",
         })
     return scenarios
 
@@ -1222,94 +1271,100 @@ def build(years: int) -> dict:
     forecasts: list[dict] = []
 
     for horizon in (6, 12):
-        result = fit_forecast(monthly, future_any(recession, horizon), min_samples=180)
-        add_forecast(forecasts, f"recession_{horizon}m", "Recessão dos EUA", "macro",
-                     f"{horizon} meses", result,
-                     "Probabilidade de existir ao menos um mês NBER de recessão no horizonte.")
+        result = fit_forecast(monthly, future_any(recession, horizon), min_samples=180, overlap=horizon)
+        add_forecast(forecasts, f"recession_{horizon}m", "US recession", "macro",
+                     f"{horizon} months", result,
+                     "Probability of at least one NBER recession month within the horizon.")
+
+    def sessions(asset: str) -> pd.DataFrame:
+        # rows where that asset actually traded, so the "current" row is its last close
+        return daily.loc[daily.index.isin(markets[asset].dropna().index)]
 
     if "sp500" in markets:
         for days, threshold in ((30, -.10), (90, -.10), (180, -.20)):
-            result = fit_forecast(daily, future_drawdown(markets["sp500"], days, threshold), min_samples=700)
-            add_forecast(forecasts, f"sp_stress_{days}d", f"S&P 500: queda de {abs(threshold):.0%}",
-                         "stress", f"{days} pregões", result,
-                         "Probabilidade de o menor fechamento futuro ultrapassar o limite de queda.")
+            result = fit_forecast(sessions("sp500"), future_drawdown(markets["sp500"], days, threshold),
+                                  min_samples=700, overlap=days)
+            add_forecast(forecasts, f"sp_stress_{days}d", f"S&P 500: {abs(threshold):.0%} drop",
+                         "stress", f"{days} sessions", result,
+                         "Probability that the lowest close in the window falls past the threshold.")
 
     for asset, label in (("btc", "Bitcoin"), ("nasdaq", "Nasdaq"), ("sp500", "S&P 500")):
         if asset not in markets:
             continue
         for horizon in (1, 5, 20, 60):
-            result = fit_forecast(daily, future_direction(markets[asset], horizon), min_samples=700)
-            add_forecast(forecasts, f"{asset}_up_{horizon}d", f"{label}: retorno positivo",
-                         "direction", f"{horizon} pregões", result,
-                         "Probabilidade calibrada de o fechamento futuro superar o atual.")
+            result = fit_forecast(sessions(asset), future_direction(markets[asset], horizon),
+                                  min_samples=700, overlap=horizon)
+            add_forecast(forecasts, f"{asset}_up_{horizon}d", f"{label}: positive return",
+                         "direction", f"{horizon} session{'s' if horizon > 1 else ''}", result,
+                         "Calibrated probability that the close at the horizon is above today's.")
 
     # monthly macro events vs the PREVIOUS print, not vs consensus (no free consensus feed)
     if "cpi" in fred:
         cpi_mom = fred["cpi"].resample("MS").last().pct_change(fill_method=None)
         target = (cpi_mom.shift(-1) > cpi_mom).astype(float).where(cpi_mom.shift(-1).notna())
-        add_forecast(forecasts, "cpi_accelerates", "CPI acelera", "inflation", "próxima divulgação",
+        add_forecast(forecasts, "cpi_accelerates", "CPI accelerates", "inflation", "next release",
                      fit_forecast(monthly, target, min_samples=300),
-                     "Probabilidade de a variação mensal superar a leitura mensal anterior.")
+                     "Probability that the monthly change beats the previous monthly reading.")
     if "core_pce" in fred:
         pce_mom = fred["core_pce"].resample("MS").last().pct_change(fill_method=None)
         target = (pce_mom.shift(-1) > pce_mom).astype(float).where(pce_mom.shift(-1).notna())
-        add_forecast(forecasts, "pce_accelerates", "Core PCE acelera", "inflation", "próxima divulgação",
+        add_forecast(forecasts, "pce_accelerates", "Core PCE accelerates", "inflation", "next release",
                      fit_forecast(monthly, target, min_samples=300),
-                     "Probabilidade de a variação mensal superar a leitura mensal anterior.")
+                     "Probability that the monthly change beats the previous monthly reading.")
     if "payroll" in fred:
         payroll_change = fred["payroll"].resample("MS").last().diff()
         slower = (payroll_change.shift(-1) < payroll_change).astype(float).where(payroll_change.shift(-1).notna())
         negative = (payroll_change.shift(-1) < 0).astype(float).where(payroll_change.shift(-1).notna())
-        add_forecast(forecasts, "payroll_slows", "Payroll desacelera", "jobs", "próxima divulgação",
+        add_forecast(forecasts, "payroll_slows", "Payrolls slow down", "jobs", "next release",
                      fit_forecast(monthly, slower, min_samples=300),
-                     "Probabilidade de a criação líquida de vagas ficar abaixo da leitura anterior.")
-        add_forecast(forecasts, "payroll_negative", "Payroll negativo", "jobs", "próxima divulgação",
+                     "Probability that net job creation comes in below the previous reading.")
+        add_forecast(forecasts, "payroll_negative", "Negative payrolls", "jobs", "next release",
                      fit_forecast(monthly, negative, min_samples=300),
-                     "Probabilidade de destruição líquida de vagas; evento historicamente raro.")
+                     "Probability of net job losses; historically rare.")
     if "unemployment" in fred:
         unemp = fred["unemployment"].resample("MS").last()
         rise = (unemp.shift(-1) - unemp >= .2).astype(float).where(unemp.shift(-1).notna())
-        add_forecast(forecasts, "unemployment_rises", "Desemprego sobe ≥ 0,2 pp", "jobs", "próxima divulgação",
+        add_forecast(forecasts, "unemployment_rises", "Unemployment up ≥ 0.2 pp", "jobs", "next release",
                      fit_forecast(monthly, rise, min_samples=300),
-                     "Probabilidade de aumento mensal de pelo menos 0,2 ponto percentual.")
+                     "Probability of a monthly rise of at least 0.2 percentage points.")
 
     benchmarks = []
     base12 = future_any(recession, 12).dropna().mean()
-    benchmarks.append({"name": "Frequência-base NBER", "horizon": "12 meses",
+    benchmarks.append({"name": "NBER base rate", "horizon": "12 months",
                        "probability": safe_number(base12),
-                       "description": "Frequência histórica de recessão no horizonte, sem variáveis explicativas."})
+                       "description": "Historical recession frequency over the horizon, no explanatory variables."})
     if "term_spread" in monthly:
         spread = monthly["term_spread"].dropna()
         if not spread.empty:
             benchmarks.append({
-                "name": "Curva Treasury 10a–3m atual", "horizon": "estado atual",
+                "name": "Treasury curve 10y–3m now", "horizon": "current",
                 "value": safe_number(spread.iloc[-1]),
                 "date": str(spread.index[-1].date()),
-                "description": "Diferença observada entre Treasury de 10 anos e 3 meses; valor negativo indica inversão.",
+                "description": "Gap between the 10-year and 3-month Treasury; negative means inverted.",
             })
-        result = fit_forecast(monthly[["term_spread"]], future_any(recession, 12), min_samples=300)
-        benchmarks.append({"name": "Estrella–Mishkin (curva 10a–3m)", "horizon": "12 meses", **result})
+        result = fit_forecast(monthly[["term_spread"]], future_any(recession, 12), min_samples=300, overlap=12)
+        benchmarks.append({"name": "Estrella–Mishkin (10y–3m curve)", "horizon": "12 months", **result})
     if "sahm_realtime" in fred and not fred["sahm_realtime"].dropna().empty:
         value = float(fred["sahm_realtime"].dropna().iloc[-1])
-        benchmarks.append({"name": "Sahm Rule em tempo real", "horizon": "estado atual",
+        benchmarks.append({"name": "Real-time Sahm rule", "horizon": "current",
                            "value": safe_number(value), "signal": bool(value >= .5),
-                           "description": "Sinaliza recessão quando alcança 0,50 pp."})
+                           "description": "Flags a recession once it reaches 0.50 pp."})
 
     claims_state = fred_status.get("claims", {})
     credit_state = fred_status.get("hy_spread", {})
     nfci_state = fred_status.get("nfci", {})
     indicators = []
     for args in [
-        (fred, "cpi", "CPI", " índice", 2), (fred, "core_cpi", "Core CPI", " índice", 2),
-        (fred, "unemployment", "Desemprego", "%", 2), (fred, "payroll", "Payroll", " mil", 0),
-        (fred, "jolts", "Vagas JOLTS", " mil", 0),
+        (fred, "cpi", "CPI", " index", 2), (fred, "core_cpi", "Core CPI", " index", 2),
+        (fred, "unemployment", "Unemployment", "%", 2), (fred, "payroll", "Payrolls", "k", 0),
+        (fred, "jolts", "JOLTS openings", "k", 0),
         (fred, "claims", claims_state.get("label", "Claims"), claims_state.get("unit", ""), 0),
-        (fred, "dgs10", "Treasury 10 anos", "%", 2), (fred, "dgs3m", "Treasury 3 meses", "%", 2),
-        (fred, "hy_spread", credit_state.get("label", "Spread high yield"),
+        (fred, "dgs10", "10-year Treasury", "%", 2), (fred, "dgs3m", "3-month Treasury", "%", 2),
+        (fred, "hy_spread", credit_state.get("label", "High yield spread"),
          credit_state.get("unit", "%"), 2),
-        (fred, "nfci", nfci_state.get("label", "Condições financeiras"),
+        (fred, "nfci", nfci_state.get("label", "Financial conditions"),
          nfci_state.get("unit", ""), 2),
-        (markets, "vix", "VIX", "", 2), (markets, "btc", "Bitcoin", " US$", 0),
+        (markets, "vix", "VIX", "", 2), (markets, "btc", "Bitcoin", " USD", 0),
         (markets, "sp500", "S&P 500", "", 0), (markets, "nasdaq", "Nasdaq", "", 0),
     ]:
         item = latest_indicator(*args)
@@ -1321,9 +1376,9 @@ def build(years: int) -> dict:
     warnings = []
     failed = [f"{k}: {v.get('error', 'failed')}" for k, v in {**market_status, **fred_status}.items() if not v.get("ok")]
     if failed:
-        warnings.append(f"{len(failed)} séries indisponíveis; modelos degradados sem interromper a atualização.")
-    warnings.append("Probabilidades são estimativas estatísticas, não recomendação de investimento.")
-    warnings.append("Dados macro revisados são defasados em um mês; benchmarks em tempo real são identificados separadamente.")
+        warnings.append(f"{len(failed)} series unavailable; the models run degraded instead of skipping the update.")
+    warnings.append("Probabilities are statistical estimates, not investment advice.")
+    warnings.append("Revised macro data is lagged one month; real-time benchmarks are flagged separately.")
     governance_summary = data_governance_summary(market_status, fred_status)
     historical_benchmarks = build_historical_benchmarks(monthly, markets)
     similar_episodes = find_similar_episodes(monthly, recession, markets)
@@ -1342,12 +1397,15 @@ def build(years: int) -> dict:
         "failures": failed,
         "methodology": {
             "validation": MODEL_VALIDATION_DESCRIPTION,
-            "ensemble": "Regressão logística regularizada + gradient boosting.",
-            "no_leakage": "Variáveis macro deslocadas um mês; nenhuma divisão aleatória.",
-            "revisions": "Períodos de referência validados; vintage histórico indisponível é declarado e mitigado por defasagem conservadora.",
-            "idempotency": "Snapshots usam identidade estável de cobertura, observações e probabilidades.",
-            "metrics": "Brier, log loss, AUC, acurácia e curva de calibração fora da amostra.",
-            "comparisons": "Recessões oficiais NBER com janela declarada; ciclos BTC segmentados por blocos de halving.",
+            "ensemble": "Regularized logistic regression + gradient boosting.",
+            "calibration": "Isotonic when the calibration window has 30+ cases of each class, Platt scaling otherwise.",
+            "no_leakage": ("Macro variables shifted one month; no random splits; market targets "
+                           "built on each asset's own trading sessions."),
+            "revisions": ("Reference periods validated; the missing historical vintage is stated "
+                          "and mitigated with a conservative lag."),
+            "idempotency": "Snapshots use a stable identity of coverage, observations and probabilities.",
+            "metrics": "Brier, log loss, AUC, accuracy and calibration curve, all out of sample.",
+            "comparisons": "Official NBER recessions with a declared window; BTC cycles split at halving blocks.",
         },
     }
     return payload

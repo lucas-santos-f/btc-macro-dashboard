@@ -19,6 +19,30 @@ class PredictorTests(unittest.TestCase):
         self.assertTrue(target.iloc[:-3].eq(1).all())
         self.assertTrue(target.iloc[-3:].isna().all())
 
+    # weekends are NaN for equities on the BTC calendar; they used to come out as 0
+    def test_direction_skips_closed_days(self):
+        index = pd.date_range("2026-10-12", periods=8, freq="D")  # Mon..Mon
+        close = pd.Series([10, 11, 12, 13, 14, np.nan, np.nan, 15], index=index, dtype=float)
+        target = predictor.future_direction(close, 1)
+        self.assertTrue(target.loc["2026-10-17":"2026-10-18"].isna().all())
+        self.assertEqual(target.loc["2026-10-16"], 1)  # Friday vs Monday
+        self.assertTrue(np.isnan(target.iloc[-1]))
+
+    def test_drawdown_skips_closed_days(self):
+        index = pd.date_range("2026-10-12", periods=8, freq="D")
+        close = pd.Series([100, 99, 98, 97, 96, np.nan, np.nan, 80], index=index, dtype=float)
+        target = predictor.future_drawdown(close, 1, -.10)
+        self.assertTrue(target.loc["2026-10-17":"2026-10-18"].isna().all())
+        self.assertEqual(target.loc["2026-10-16"], 1)
+
+    def test_platt_on_thin_class(self):
+        rng = np.random.default_rng(5)
+        raw = rng.uniform(size=200)
+        thin = (raw > .97).astype(int)
+        self.assertEqual(predictor._fit_calibrator(raw, thin).method, "platt")
+        wide = (raw > .5).astype(int)
+        self.assertEqual(predictor._fit_calibrator(raw, wide).method, "isotonic")
+
     def test_future_any_window(self):
         index = pd.date_range("2020-01-01", periods=8, freq="MS")
         values = pd.Series([0, 0, 1, 0, 0, 0, 0, 0], index=index)
@@ -38,6 +62,17 @@ class PredictorTests(unittest.TestCase):
         self.assertGreaterEqual(result["probability"], 0)
         self.assertLessEqual(result["probability"], 1)
         self.assertLessEqual(result["interval"][0], result["interval"][1])
+
+    def test_overlap_caps_quality(self):
+        rng = np.random.default_rng(11)
+        index = pd.date_range("2000-01-01", periods=900, freq="D")
+        x = rng.normal(size=900)
+        features = pd.DataFrame({"x": x}, index=index)
+        target = pd.Series((x + rng.normal(scale=.3, size=900) > 0).astype(float), index=index)
+        alone = predictor.fit_forecast(features, target, min_samples=300)
+        overlapped = predictor.fit_forecast(features, target, min_samples=300, overlap=60)
+        self.assertEqual(overlapped["quality"], "low")
+        self.assertLess(overlapped["metrics"]["model_confidence"], alone["metrics"]["model_confidence"])
 
     def test_insufficient_data(self):
         index = pd.date_range("2020-01-01", periods=20, freq="D")
@@ -156,7 +191,7 @@ class PredictorTests(unittest.TestCase):
         result = predictor.fit_forecast(features, target, min_samples=200)
         self.assertEqual(result["status"], "insufficient_data")
         self.assertTrue(result["rare_events"]["detected"])
-        self.assertIn("minoritária", result["reason"])
+        self.assertIn("minority", result["reason"])
 
 
     def test_period_metrics_observed_only(self):
@@ -213,7 +248,7 @@ class PredictorTests(unittest.TestCase):
 
     def test_scenarios_use_interval(self):
         forecasts = [{
-            "id": "recession_12m", "title": "Recessão", "horizon": "12 meses",
+            "id": "recession_12m", "title": "US recession", "horizon": "12 months",
             "status": "ok", "probability": .30, "interval": [.20, .45],
         }]
         scenarios = predictor.build_statistical_scenarios(forecasts)
@@ -279,7 +314,7 @@ class PredictorTests(unittest.TestCase):
         self.assertIn('class="skip-link"', html)
         self.assertIn('aria-live="polite"', html)
         self.assertIn('aria-labelledby="predictorTitle"', html)
-        self.assertIn('body[data-view="preditor"]', css)
+        self.assertIn('body[data-view="predictor"]', css)
 
 
     def test_js_syntax(self):
@@ -299,9 +334,9 @@ class PredictorTests(unittest.TestCase):
 
     def test_schema_version(self):
         self.assertEqual(predictor.PREDICTOR_SCHEMA_VERSION, 4)
-        self.assertIn("Walk-forward repetido", predictor.MODEL_VALIDATION_DESCRIPTION)
-        self.assertIn("janelas expansivas", predictor.MODEL_VALIDATION_DESCRIPTION)
-        self.assertIn("sem sobreposição", predictor.MODEL_VALIDATION_DESCRIPTION)
+        self.assertIn("walk-forward", predictor.MODEL_VALIDATION_DESCRIPTION)
+        self.assertIn("expanding windows", predictor.MODEL_VALIDATION_DESCRIPTION)
+        self.assertIn("non-overlapping", predictor.MODEL_VALIDATION_DESCRIPTION)
 
 
 if __name__ == "__main__":
