@@ -1,6 +1,8 @@
 # btc-macro-dashboard
 
-Local dashboard that puts Bitcoin next to on-chain metrics, US indices, rates and commodities (34 daily series, 7 years), plus a calibrated predictor for US recession, S&P 500 drawdowns and short-term market direction.
+Dashboard that puts Bitcoin next to on-chain metrics, US indices, rates and commodities (34 daily series, 7 years), plus a calibrated predictor for US recession, S&P 500 drawdowns and short-term market direction.
+
+Live: https://lucas-santos-f.github.io/btc-macro-dashboard/ (rebuilt every weekday after the US close).
 
 ![market view](docs/market.png)
 
@@ -43,4 +45,5 @@ Both optional.
 - Macro data uses reference periods, not release-date vintages. The backtest lags it a month to compensate and says so in the payload.
 - Market targets and features are built on each asset's own trading sessions. They used to live on BTC's 7-day calendar, where a Sunday row did `Monday / NaN > 1`, got a free "down" label, and the equity models learned to spot weekends: AUC 0.8 on next-day Nasdaq direction, and 1% on Monday mornings before the US open (no close yet, so it looked like a Sunday). With that gone, daily index direction is about a coin flip, which is the honest answer.
 - Overlapping horizons are counted as what they are: 270 test days of a 60-session target are ~4 independent outcomes, so those cards stay "low" quality and close to the base rate.
+- The Pages build refreshes the data on the runner and deploys it without committing, so the history doesn't fill up with bot commits. If a source is down that day, the committed snapshot goes up instead.
 - Not investment advice.

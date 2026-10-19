@@ -1,0 +1,52 @@
+name: pages
+
+# The live copy gets fresh data every weekday without committing it: data.json
+# and predictor.json are rebuilt on the runner and only the deployed site
+# changes. If a source is down those steps fail soft and the committed
+# snapshot goes up instead.
+on:
+  push:
+    branches: [main]
+    paths: ['web/**', 'fetch_data.py', 'predictor.py', 'sources.py', '.github/workflows/pages.yml']
+  schedule:
+    - cron: '30 22 * * 1-5'   # after the US close
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
+      BEA_API_KEY: ${{ secrets.BEA_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: refresh data
+        continue-on-error: true
+        run: python fetch_data.py --years 7
+      - name: refresh predictor
+        continue-on-error: true
+        run: python predictor.py --market-years 20
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deployment
+        uses: actions/deploy-pages@v4
