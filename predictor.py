@@ -1,8 +1,10 @@
-"""Coleta dados públicos, treina modelos temporais e gera web/predictor.json.
+"""Pulls public market + macro data, trains time-aware classifiers and writes web/predictor.json.
 
-O pipeline não usa LLM nem exige chave comercial. As séries FRED possuem
-fallbacks diretos para BLS, BEA, Treasury, DOL, Chicago Fed e OFR; a chave
-gratuita da BEA continua opcional.
+No paid keys. FRED series fall back to the agencies themselves (BLS, BEA,
+Treasury, DOL, Chicago Fed, OFR) when FRED is unreachable; the free BEA key
+is optional.
+
+UI strings in here (titles, descriptions) are Portuguese, the dashboard is.
 """
 
 from __future__ import annotations
@@ -36,7 +38,6 @@ ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
 OUTPUT = WEB / "predictor.json"
 HISTORY = ROOT / "predictor_history.csv"
-LOCAL_DASHBOARD_URL = "http://127.0.0.1:8765/"
 PREDICTOR_SCHEMA_VERSION = 4
 MODEL_VALIDATION_DESCRIPTION = (
     "Walk-forward repetido com janelas expansivas; em cada dobra, treino, calibração isotônica "
@@ -106,38 +107,38 @@ TREASURY_DIRECT = {
 
 
 RELEASE_METADATA = {
-    "cpi": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/cpi.htm"},
-    "core_cpi": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/cpi.htm"},
-    "ppi": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/ppi.htm"},
-    "payroll": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/empsit.htm"},
-    "unemployment": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/empsit.htm"},
-    "participation": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/empsit.htm"},
-    "wages": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/empsit.htm"},
-    "jolts": {"revisavel": True, "calendario_oficial": "https://www.bls.gov/schedule/news_release/jolts.htm"},
-    "pce_price": {"revisavel": True, "calendario_oficial": "https://www.bea.gov/news/schedule"},
-    "core_pce": {"revisavel": True, "calendario_oficial": "https://www.bea.gov/news/schedule"},
-    "real_gdp": {"revisavel": True, "calendario_oficial": "https://www.bea.gov/news/schedule"},
-    "real_income": {"revisavel": True, "calendario_oficial": "https://www.bea.gov/news/schedule"},
-    "consumption": {"revisavel": True, "calendario_oficial": "https://www.bea.gov/news/schedule"},
-    "claims": {"revisavel": True, "calendario_oficial": "https://oui.doleta.gov/unemploy/claims.asp"},
-    "dgs10": {"revisavel": False, "calendario_oficial": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"},
-    "dgs3m": {"revisavel": False, "calendario_oficial": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"},
-    "real10": {"revisavel": False, "calendario_oficial": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"},
-    "nfci": {"revisavel": True, "calendario_oficial": "https://www.chicagofed.org/research/data/nfci/current-data"},
-    "recession": {"revisavel": True, "calendario_oficial": "https://www.nber.org/research/data/us-business-cycle-expansions-and-contractions"},
-    "sahm_realtime": {"revisavel": True, "calendario_oficial": "https://fred.stlouisfed.org/series/SAHMREALTIME"},
+    "cpi": {"revisable": True, "release_calendar": "https://www.bls.gov/schedule/news_release/cpi.htm"},
+    "core_cpi": {"revisable": True, "release_calendar": "https://www.bls.gov/schedule/news_release/cpi.htm"},
+    "ppi": {"revisable": True, "release_calendar": "https://www.bls.gov/schedule/news_release/ppi.htm"},
+    "payroll": {"revisable": True, "release_calendar": "https://www.bls.gov/schedule/news_release/empsit.htm"},
+    "unemployment": {"revisable": True, "release_calendar": "https://www.bls.gov/schedule/news_release/empsit.htm"},
+    "participation": {"revisable": True, "release_calendar": "https://www.bls.gov/schedule/news_release/empsit.htm"},
+    "wages": {"revisable": True, "release_calendar": "https://www.bls.gov/schedule/news_release/empsit.htm"},
+    "jolts": {"revisable": True, "release_calendar": "https://www.bls.gov/schedule/news_release/jolts.htm"},
+    "pce_price": {"revisable": True, "release_calendar": "https://www.bea.gov/news/schedule"},
+    "core_pce": {"revisable": True, "release_calendar": "https://www.bea.gov/news/schedule"},
+    "real_gdp": {"revisable": True, "release_calendar": "https://www.bea.gov/news/schedule"},
+    "real_income": {"revisable": True, "release_calendar": "https://www.bea.gov/news/schedule"},
+    "consumption": {"revisable": True, "release_calendar": "https://www.bea.gov/news/schedule"},
+    "claims": {"revisable": True, "release_calendar": "https://oui.doleta.gov/unemploy/claims.asp"},
+    "dgs10": {"revisable": False, "release_calendar": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"},
+    "dgs3m": {"revisable": False, "release_calendar": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"},
+    "real10": {"revisable": False, "release_calendar": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates"},
+    "nfci": {"revisable": True, "release_calendar": "https://www.chicagofed.org/research/data/nfci/current-data"},
+    "recession": {"revisable": True, "release_calendar": "https://www.nber.org/research/data/us-business-cycle-expansions-and-contractions"},
+    "sahm_realtime": {"revisable": True, "release_calendar": "https://fred.stlouisfed.org/series/SAHMREALTIME"},
 }
 DEFAULT_MACRO_GOVERNANCE = {
-    "revisavel": True,
-    "data_tipo": "período de referência/observação, não timestamp de divulgação",
-    "vintage_tempo_real": False,
-    "limitacao": "A fonte corrente não fornece o vintage conhecido em cada data histórica.",
+    "revisable": True,
+    "date_kind": "período de referência/observação, não timestamp de divulgação",
+    "realtime_vintage": False,
+    "limitation": "A fonte corrente não fornece o vintage conhecido em cada data histórica.",
 }
 DEFAULT_MARKET_GOVERNANCE = {
-    "revisavel": False,
-    "data_tipo": "data do fechamento observado",
-    "vintage_tempo_real": True,
-    "limitacao": "Fechamentos podem sofrer correções operacionais da fonte, mas não revisão macroeconômica.",
+    "revisable": False,
+    "date_kind": "data do fechamento observado",
+    "realtime_vintage": True,
+    "limitation": "Fechamentos podem sofrer correções operacionais da fonte, mas não revisão macroeconômica.",
 }
 
 TREASURY_URL = "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml"
@@ -155,16 +156,16 @@ RECESSIONS = [
 
 NBER_EPISODES = [
     {
-        "id": "2000_2001", "nome": "2000–2001 (dot-com / recessão de 2001)",
-        "inicio": "2001-03-01", "fim": "2001-11-30",
+        "id": "2000_2001", "name": "2000–2001 (dot-com / recessão de 2001)",
+        "start": "2001-03-01", "end": "2001-11-30",
     },
     {
-        "id": "2008", "nome": "Crise financeira de 2008",
-        "inicio": "2007-12-01", "fim": "2009-06-30",
+        "id": "2008", "name": "Crise financeira de 2008",
+        "start": "2007-12-01", "end": "2009-06-30",
     },
     {
-        "id": "2020", "nome": "Recessão de 2020",
-        "inicio": "2020-02-01", "fim": "2020-04-30",
+        "id": "2020", "name": "Recessão de 2020",
+        "start": "2020-02-01", "end": "2020-04-30",
     },
 ]
 NBER_SOURCE_URL = "https://www.nber.org/research/data/us-business-cycle-expansions-and-contractions"
@@ -196,7 +197,7 @@ def safe_number(value, digits=4):
 
 def validate_collected_frame(frame: pd.DataFrame, status: dict, *,
                              macro: bool, as_of: pd.Timestamp | None = None) -> pd.DataFrame:
-    """Normaliza índices, rejeita datas futuras e anexa governança de divulgação."""
+    """Normalize the index, drop future dates and attach release governance to each series."""
     reference = as_of if as_of is not None else pd.Timestamp.now("UTC").tz_localize(None)
     as_of = pd.Timestamp(reference).normalize()
     cleaned = {}
@@ -209,20 +210,20 @@ def validate_collected_frame(frame: pd.DataFrame, status: dict, *,
         series = series[~series.index.duplicated(keep="last")].sort_index()
         future = int((series.index > as_of).sum())
         series = series.loc[series.index <= as_of].dropna()
-        state = status.setdefault(key, {"ok": False, "fonte": "desconhecida"})
+        state = status.setdefault(key, {"ok": False, "source": "unknown"})
         base = DEFAULT_MACRO_GOVERNANCE if macro else DEFAULT_MARKET_GOVERNANCE
         metadata = {**base, **(RELEASE_METADATA.get(key, {}) if macro else {})}
-        state["governanca"] = metadata
-        state["validacao"] = {
-            "ordem_cronologica": True,
-            "duplicatas_consolidadas": duplicates,
-            "datas_futuras_rejeitadas": future,
-            "data_limite": str(as_of.date()),
+        state["governance"] = metadata
+        state["validation"] = {
+            "chronological": True,
+            "merged_duplicates": duplicates,
+            "future_dates_rejected": future,
+            "cutoff_date": str(as_of.date()),
         }
         if series.empty:
-            state.update({"ok": False, "erro": "série vazia após validação de datas"})
+            state.update({"ok": False, "error": "empty after date validation"})
         else:
-            state["ultima_data"] = str(series.index[-1].date())
+            state["last_date"] = str(series.index[-1].date())
             cleaned[key] = series
     return pd.DataFrame(cleaned).sort_index()
 
@@ -230,17 +231,17 @@ def validate_collected_frame(frame: pd.DataFrame, status: dict, *,
 def data_governance_summary(market_status: dict, macro_status: dict) -> dict:
     states = [*market_status.values(), *macro_status.values()]
     return {
-        "series_revisaveis": sum(bool(item.get("governanca", {}).get("revisavel")) for item in states),
-        "series_com_calendario_oficial": sum(
-            bool(item.get("governanca", {}).get("calendario_oficial")) for item in states
+        "revisable_series": sum(bool(item.get("governance", {}).get("revisable")) for item in states),
+        "series_with_release_calendar": sum(
+            bool(item.get("governance", {}).get("release_calendar")) for item in states
         ),
-        "datas_futuras_rejeitadas": sum(
-            int(item.get("validacao", {}).get("datas_futuras_rejeitadas", 0)) for item in states
+        "future_dates_rejected": sum(
+            int(item.get("validation", {}).get("future_dates_rejected", 0)) for item in states
         ),
-        "duplicatas_consolidadas": sum(
-            int(item.get("validacao", {}).get("duplicatas_consolidadas", 0)) for item in states
+        "merged_duplicates": sum(
+            int(item.get("validation", {}).get("merged_duplicates", 0)) for item in states
         ),
-        "nota_vintage": (
+        "vintage_note": (
             "Datas macro são períodos de referência. Sem vintage em tempo real, backtests aplicam "
             "defasagem conservadora de um mês e declaram a limitação de revisões."
         ),
@@ -255,15 +256,15 @@ def fetch_markets(years: int) -> tuple[pd.DataFrame, dict]:
             frame = yf.download(ticker, start=start, auto_adjust=True, progress=False,
                                 threads=False, timeout=45)
             if frame.empty:
-                raise RuntimeError("resposta vazia")
+                raise RuntimeError("empty response")
             if isinstance(frame.columns, pd.MultiIndex):
                 frame.columns = frame.columns.get_level_values(0)
             series = frame["Close"].dropna().astype(float)
             series.index = pd.DatetimeIndex(series.index).tz_localize(None).normalize()
             out[key] = series
-            status[key] = {"ok": True, "fonte": "Yahoo Finance", "ultima_data": str(series.index.max().date())}
+            status[key] = {"ok": True, "source": "Yahoo Finance", "last_date": str(series.index.max().date())}
         except Exception as exc:
-            status[key] = {"ok": False, "fonte": "Yahoo Finance", "erro": str(exc)[:160]}
+            status[key] = {"ok": False, "source": "Yahoo Finance", "error": str(exc)[:160]}
     return validate_collected_frame(pd.DataFrame(out), status, macro=False), status
 
 
@@ -283,12 +284,12 @@ def fetch_fred() -> tuple[pd.DataFrame, dict]:
             values = pd.to_numeric(frame[value_col], errors="coerce")
             series = pd.Series(values.to_numpy(), index=idx, name=key).dropna()
             if series.empty:
-                raise RuntimeError("resposta vazia")
-            return key, series, {"ok": True, "fonte": source, "serie": series_id,
-                                 "rotulo": label, "ultima_data": str(series.index.max().date())}
+                raise RuntimeError("empty response")
+            return key, series, {"ok": True, "source": source, "series_id": series_id,
+                                 "label": label, "last_date": str(series.index.max().date())}
         except Exception as exc:
-            return key, None, {"ok": False, "fonte": source, "serie": series_id,
-                               "rotulo": label, "erro": str(exc)[:160]}
+            return key, None, {"ok": False, "source": source, "series_id": series_id,
+                               "label": label, "error": str(exc)[:160]}
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
         for key, series, state in pool.map(one, FRED.items()):
@@ -305,7 +306,7 @@ def fetch_fred() -> tuple[pd.DataFrame, dict]:
 
 
 def _apply_fallback(out: dict, status: dict, candidates, fetcher) -> None:
-    """Mescla um fallback sem permitir que sua falha interrompa outros adaptadores."""
+    # a fallback blowing up must not take the other adapters down with it
     missing = [key for key in candidates if key not in out]
     if not missing:
         return
@@ -313,29 +314,29 @@ def _apply_fallback(out: dict, status: dict, candidates, fetcher) -> None:
         direct, direct_status = fetcher(missing)
     except Exception as exc:
         direct = {}
-        direct_status = {key: {"ok": False, "fonte": fetcher.__name__, "erro": str(exc)[:180]}
+        direct_status = {key: {"ok": False, "source": fetcher.__name__, "error": str(exc)[:180]}
                          for key in missing}
     for key in missing:
         series = direct.get(key)
         if series is not None and not series.dropna().empty:
             state = dict(direct_status.get(key, {}))
-            state.update({"ok": True, "fallback": True, "serie_primaria": FRED[key][0]})
+            state.update({"ok": True, "fallback": True, "primary_series": FRED[key][0]})
             out[key] = series.dropna().sort_index()
             status[key] = state
             continue
-        primary = status.get(key, {"ok": False, "fonte": FRED[key][1], "serie": FRED[key][0],
-                                   "rotulo": FRED[key][2]})
+        primary = status.get(key, {"ok": False, "source": FRED[key][1], "series_id": FRED[key][0],
+                                   "label": FRED[key][2]})
         fallback = direct_status.get(key, {})
-        source = fallback.get("fonte", fetcher.__name__)
-        primary_error = primary.get("erro", "fonte primária indisponível")
-        fallback_error = fallback.get("erro", "fallback sem dados")
+        source = fallback.get("source", fetcher.__name__)
+        primary_error = primary.get("error", "primary source unavailable")
+        fallback_error = fallback.get("error", "fallback returned nothing")
         status[key] = {**primary, "ok": False,
-                       "erro": f"{primary_error} | {source}: {fallback_error}"[-360:],
-                       "tentativas": [primary.get("fonte", "FRED"), source]}
+                       "error": f"{primary_error} | {source}: {fallback_error}"[-360:],
+                       "attempts": [primary.get("source", "FRED"), source]}
 
 
 def fetch_bls_direct(keys: list[str]) -> tuple[dict, dict]:
-    """Fallback oficial BLS em blocos de 20 anos, sem chave obrigatória."""
+    # BLS API without a key only takes 10 years per request (20 with one)
     ids = [BLS_DIRECT[key] for key in keys]
     reverse = {value: key for key, value in BLS_DIRECT.items()}
     points = {key: [] for key in keys}
@@ -354,7 +355,7 @@ def fetch_bls_direct(keys: list[str]) -> tuple[dict, dict]:
             response.raise_for_status()
             data = response.json()
             if data.get("status") != "REQUEST_SUCCEEDED":
-                raise RuntimeError("; ".join(data.get("message") or ["BLS recusou a consulta"]))
+                raise RuntimeError("; ".join(data.get("message") or ["BLS rejected the request"]))
             for item in data.get("Results", {}).get("series", []):
                 key = reverse.get(item.get("seriesID"))
                 if key not in points:
@@ -374,11 +375,11 @@ def fetch_bls_direct(keys: list[str]) -> tuple[dict, dict]:
         if points[key]:
             series = pd.Series(dict(points[key]), name=key).sort_index()
             out[key] = series
-            status[key] = {"ok": True, "fonte": "BLS API direta", "serie": BLS_DIRECT[key],
-                           "rotulo": FRED[key][2], "ultima_data": str(series.index.max().date())}
+            status[key] = {"ok": True, "source": "BLS API direta", "series_id": BLS_DIRECT[key],
+                           "label": FRED[key][2], "last_date": str(series.index.max().date())}
         else:
-            status[key] = {"ok": False, "fonte": "BLS API direta", "serie": BLS_DIRECT[key],
-                           "rotulo": FRED[key][2], "erro": " | ".join(errors)[-300:] or "sem dados"}
+            status[key] = {"ok": False, "source": "BLS API direta", "series_id": BLS_DIRECT[key],
+                           "label": FRED[key][2], "error": " | ".join(errors)[-300:] or "no data"}
     return out, status
 
 
@@ -412,8 +413,8 @@ def fetch_bea_direct(keys: list[str]) -> tuple[dict, dict]:
     out, status = {}, {}
     if not api_key:
         for key in keys:
-            status[key] = {"ok": False, "fonte": "BEA API direta", "serie": BEA_DIRECT[key][0],
-                           "rotulo": FRED[key][2], "erro": "BEA_API_KEY ausente"}
+            status[key] = {"ok": False, "source": "BEA API direta", "series_id": BEA_DIRECT[key][0],
+                           "label": FRED[key][2], "error": "BEA_API_KEY not set"}
         return out, status
     groups = {}
     for key in keys:
@@ -428,20 +429,20 @@ def fetch_bea_direct(keys: list[str]) -> tuple[dict, dict]:
             response.raise_for_status()
             results = response.json().get("BEAAPI", {}).get("Results", {})
             if results.get("Error"):
-                raise RuntimeError(results["Error"].get("APIErrorDescription", "BEA recusou a consulta"))
+                raise RuntimeError(results["Error"].get("APIErrorDescription", "BEA rejected the request"))
             rows = results.get("Data") or []
             for key in group_keys:
                 series = _parse_bea_rows(rows, key)
                 if series.empty:
-                    raise RuntimeError(f"{key}: linha NIPA não encontrada em {table}")
+                    raise RuntimeError(f"{key}: NIPA line not found in {table}")
                 out[key] = series
-                status[key] = {"ok": True, "fonte": "BEA API direta", "serie": table,
-                               "rotulo": FRED[key][2], "ultima_data": str(series.index.max().date())}
+                status[key] = {"ok": True, "source": "BEA API direta", "series_id": table,
+                               "label": FRED[key][2], "last_date": str(series.index.max().date())}
         except Exception as exc:
             for key in group_keys:
                 if key not in out:
-                    status[key] = {"ok": False, "fonte": "BEA API direta", "serie": table,
-                                   "rotulo": FRED[key][2], "erro": str(exc)[:180]}
+                    status[key] = {"ok": False, "source": "BEA API direta", "series_id": table,
+                                   "label": FRED[key][2], "error": str(exc)[:180]}
     return out, status
 
 
@@ -463,7 +464,7 @@ def _parse_treasury_xml(text: str, fields: dict[str, str]) -> dict[str, list[tup
 
 
 def fetch_treasury_direct(keys: list[str]) -> tuple[dict, dict]:
-    """Fallback oficial para curvas nominais e reais, consultado por ano."""
+    # treasury.gov XML only serves one year per call
     requested = {key: TREASURY_DIRECT[key] for key in keys}
     datasets = {}
     current = datetime.now().year
@@ -498,14 +499,14 @@ def fetch_treasury_direct(keys: list[str]) -> tuple[dict, dict]:
         if points[key]:
             series = pd.Series(dict(points[key]), name=key).sort_index()
             out[key] = series
-            status[key] = {"ok": True, "fonte": "U.S. Treasury XML direto",
-                           "serie": f"{dataset}:{field}", "rotulo": label, "unidade": unit,
-                           "ultima_data": str(series.index.max().date()),
-                           "falhas_parciais": len(errors)}
+            status[key] = {"ok": True, "source": "U.S. Treasury XML direto",
+                           "series_id": f"{dataset}:{field}", "label": label, "unit": unit,
+                           "last_date": str(series.index.max().date()),
+                           "partial_failures": len(errors)}
         else:
-            status[key] = {"ok": False, "fonte": "U.S. Treasury XML direto",
-                           "serie": f"{dataset}:{field}", "rotulo": label,
-                           "erro": " | ".join(errors)[-300:] or "sem dados"}
+            status[key] = {"ok": False, "source": "U.S. Treasury XML direto",
+                           "series_id": f"{dataset}:{field}", "label": label,
+                           "error": " | ".join(errors)[-300:] or "no data"}
     return out, status
 
 
@@ -527,14 +528,14 @@ def fetch_claims_direct(keys: list[str]) -> tuple[dict, dict]:
                 points[pd.Timestamp(date).normalize()] = float(value)
         series = pd.Series(points, name="claims", dtype=float).sort_index()
         if series.empty:
-            raise RuntimeError("relatório ETA 539 sem claims nacionais ajustados")
-        return {"claims": series}, {"claims": {"ok": True, "fonte": "U.S. DOL ETA direto",
-                "serie": "ETA 539 initial claims SA", "rotulo": FRED["claims"][2],
-                "unidade": " pedidos", "ultima_data": str(series.index.max().date())}}
+            raise RuntimeError("ETA 539 report has no national SA claims")
+        return {"claims": series}, {"claims": {"ok": True, "source": "U.S. DOL ETA direto",
+                "series_id": "ETA 539 initial claims SA", "label": FRED["claims"][2],
+                "unit": " pedidos", "last_date": str(series.index.max().date())}}
     except Exception as exc:
-        return {}, {"claims": {"ok": False, "fonte": "U.S. DOL ETA direto",
-                    "serie": "ETA 539 initial claims SA", "rotulo": FRED["claims"][2],
-                    "erro": str(exc)[:180]}}
+        return {}, {"claims": {"ok": False, "source": "U.S. DOL ETA direto",
+                    "series_id": "ETA 539 initial claims SA", "label": FRED["claims"][2],
+                    "error": str(exc)[:180]}}
 
 
 def fetch_nfci_direct(keys: list[str]) -> tuple[dict, dict]:
@@ -548,13 +549,13 @@ def fetch_nfci_direct(keys: list[str]) -> tuple[dict, dict]:
         values = pd.to_numeric(frame["NFCI"], errors="coerce")
         series = pd.Series(values.to_numpy(), index=index, name="nfci").dropna().sort_index()
         if series.empty:
-            raise RuntimeError("CSV NFCI sem observações")
-        return {"nfci": series}, {"nfci": {"ok": True, "fonte": "Chicago Fed direto",
-                "serie": "NFCI", "rotulo": FRED["nfci"][2], "unidade": " índice",
-                "ultima_data": str(series.index.max().date())}}
+            raise RuntimeError("NFCI csv has no rows")
+        return {"nfci": series}, {"nfci": {"ok": True, "source": "Chicago Fed direto",
+                "series_id": "NFCI", "label": FRED["nfci"][2], "unit": " índice",
+                "last_date": str(series.index.max().date())}}
     except Exception as exc:
-        return {}, {"nfci": {"ok": False, "fonte": "Chicago Fed direto", "serie": "NFCI",
-                    "rotulo": FRED["nfci"][2], "erro": str(exc)[:180]}}
+        return {}, {"nfci": {"ok": False, "source": "Chicago Fed direto", "series_id": "NFCI",
+                    "label": FRED["nfci"][2], "error": str(exc)[:180]}}
 
 
 def fetch_ofr_credit_direct(keys: list[str]) -> tuple[dict, dict]:
@@ -568,15 +569,15 @@ def fetch_ofr_credit_direct(keys: list[str]) -> tuple[dict, dict]:
         values = pd.to_numeric(frame["Credit"], errors="coerce")
         series = pd.Series(values.to_numpy(), index=index, name="hy_spread").dropna().sort_index()
         if series.empty:
-            raise RuntimeError("CSV OFR FSI sem componente de crédito")
-        return {"hy_spread": series}, {"hy_spread": {"ok": True, "fonte": "OFR FSI direto",
-                "serie": "OFR FSI:Credit", "rotulo": "Estresse de crédito OFR (proxy)",
-                "unidade": " índice", "proxy_para": FRED["hy_spread"][0],
-                "ultima_data": str(series.index.max().date())}}
+            raise RuntimeError("OFR FSI csv has no Credit column")
+        return {"hy_spread": series}, {"hy_spread": {"ok": True, "source": "OFR FSI direto",
+                "series_id": "OFR FSI:Credit", "label": "Estresse de crédito OFR (proxy)",
+                "unit": " índice", "proxy_for": FRED["hy_spread"][0],
+                "last_date": str(series.index.max().date())}}
     except Exception as exc:
-        return {}, {"hy_spread": {"ok": False, "fonte": "OFR FSI direto",
-                    "serie": "OFR FSI:Credit", "rotulo": "Estresse de crédito OFR (proxy)",
-                    "erro": str(exc)[:180]}}
+        return {}, {"hy_spread": {"ok": False, "source": "OFR FSI direto",
+                    "series_id": "OFR FSI:Credit", "label": "Estresse de crédito OFR (proxy)",
+                    "error": str(exc)[:180]}}
 
 
 def load_onchain() -> pd.DataFrame:
@@ -585,9 +586,9 @@ def load_onchain() -> pd.DataFrame:
         return pd.DataFrame()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        idx = pd.to_datetime(data["datas"])
-        wanted = {"mvrv", "fluxo_liq", "saldo_ex", "fear_greed", "hashrate"}
-        columns = {s["key"]: pd.to_numeric(pd.Series(s["valores"]), errors="coerce").to_numpy()
+        idx = pd.to_datetime(data["dates"])
+        wanted = {"mvrv", "exchange_netflow", "exchange_balance", "fear_greed", "hashrate"}
+        columns = {s["key"]: pd.to_numeric(pd.Series(s["values"]), errors="coerce").to_numpy()
                    for s in data["series"] if s["key"] in wanted}
         return pd.DataFrame(columns, index=idx)
     except Exception:
@@ -633,7 +634,8 @@ def monthly_features(fred: pd.DataFrame, markets: pd.DataFrame) -> tuple[pd.Data
                            markets.index.max() if not markets.empty else None] if x is not None])
     index = pd.date_range(start=start, end=end, freq="MS")
     monthly = fred.resample("MS").last().reindex(index) if not fred.empty else pd.DataFrame(index=index)
-    # Uma observação macro só vira feature no mês seguinte ao mês de referência.
+    # a macro print only becomes a feature the month AFTER its reference month,
+    # otherwise the backtest knows CPI before it was released
     released = monthly.drop(columns=["recession"], errors="ignore").shift(1)
     features = pd.DataFrame(index=index)
     for col in released.columns:
@@ -682,13 +684,13 @@ def _models() -> tuple[Pipeline, Pipeline]:
         ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
         ("scale", StandardScaler()),
         ("model", LogisticRegression(C=0.35, class_weight="balanced", max_iter=3000,
-                                     random_state=42)),
+                                     random_state=7)),
     ])
     boost = Pipeline([
         ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
         ("model", HistGradientBoostingClassifier(max_iter=160, max_leaf_nodes=12,
                                                   learning_rate=.045, l2_regularization=2,
-                                                  random_state=42)),
+                                                  random_state=7)),
     ])
     return logistic, boost
 
@@ -696,7 +698,7 @@ def _models() -> tuple[Pipeline, Pipeline]:
 def temporal_walk_forward_splits(n: int, min_train: int, max_folds: int = 5,
                                  calibration_size: int | None = None,
                                  test_size: int | None = None) -> list[tuple[int, int, int]]:
-    """Cria dobras expansivas treino/calibração/teste, todas contíguas e sem sobreposição."""
+    """Expanding train/calibration/test folds, contiguous and non-overlapping."""
     if n <= min_train:
         return []
     calibration_size = calibration_size or max(12, min(90, n // 10))
@@ -721,11 +723,11 @@ def _rare_event_summary(y: pd.Series) -> dict:
     negatives = int(len(y) - positives)
     rate = float(positives / len(y)) if len(y) else 0.0
     return {
-        "detectado": bool(len(y) and (positives < 30 or rate < .10)),
-        "eventos": positives,
-        "nao_eventos": negatives,
-        "taxa": safe_number(rate),
-        "tratamento": (
+        "detected": bool(len(y) and (positives < 30 or rate < .10)),
+        "events": positives,
+        "non_events": negatives,
+        "rate": safe_number(rate),
+        "handling": (
             "Pesos inversos de classe no boosting, regressão logística balanceada, "
             "calibração somente em janela posterior ao treino e retração à taxa-base."
         ),
@@ -741,13 +743,13 @@ def _fit_temporal_models(train_x: pd.DataFrame, train_y: pd.Series,
                          calibration_x: pd.DataFrame, calibration_y: pd.Series):
     usable = train_x.columns[train_x.notna().any(axis=0)]
     if len(usable) == 0:
-        raise ValueError("treino sem variável utilizável")
+        raise ValueError("no usable feature in the train window")
     train_x = train_x[usable]
     calibration_x = calibration_x[usable]
     if train_y.nunique() < 2 or calibration_y.nunique() < 2:
-        raise ValueError("treino ou calibração temporal sem as duas classes")
+        raise ValueError("train or calibration window is missing a class")
     if min(train_y.value_counts()) < 4:
-        raise ValueError("treino com menos de quatro exemplos em uma classe")
+        raise ValueError("fewer than 4 examples of a class in train")
     logit, boost = _models()
     logit.fit(train_x, train_y)
     boost.fit(train_x, train_y, model__sample_weight=_balanced_sample_weight(train_y))
@@ -767,7 +769,7 @@ def _predict_ensemble(logit: Pipeline, boost: Pipeline, calibrator: IsotonicRegr
 
 
 def _latest_temporal_partition(y: pd.Series, min_train: int, base_size: int) -> int | None:
-    """Retorna o início da calibração mais recente que ainda contém as duas classes."""
+    # most recent calibration start that still has both classes in it
     start = max(min_train, len(y) - base_size)
     step = max(6, base_size // 2)
     while start > min_train and y.iloc[start:].nunique() < 2:
@@ -781,11 +783,11 @@ def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> 
     valid = y.notna() & all_features.notna().sum(axis=1).gt(0)
     frame, y = all_features.loc[valid], y.loc[valid].astype(int)
     rare = _rare_event_summary(y)
-    if len(frame) < min_samples or y.nunique() < 2 or min(rare["eventos"], rare["nao_eventos"]) < 8:
+    if len(frame) < min_samples or y.nunique() < 2 or min(rare["events"], rare["non_events"]) < 8:
         return {
-            "status": "dados_insuficientes", "amostras": int(len(frame)),
-            "eventos": rare["eventos"], "eventos_raros": rare,
-            "motivo": "amostra ou classe minoritária insuficiente para validação temporal",
+            "status": "insufficient_data", "samples": int(len(frame)),
+            "events": rare["events"], "rare_events": rare,
+            "reason": "amostra ou classe minoritária insuficiente para validação temporal",
         }
 
     splits = temporal_walk_forward_splits(len(frame), min_samples)
@@ -806,22 +808,22 @@ def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> 
         actuals.extend(test_y.to_numpy(int).tolist())
         dates.extend(test_x.index.tolist())
         fold_meta.append({
-            "treino_inicio": str(train_x.index[0].date()),
-            "treino_fim": str(train_x.index[-1].date()),
-            "calibracao_inicio": str(calibration_x.index[0].date()),
-            "calibracao_fim": str(calibration_x.index[-1].date()),
-            "teste_inicio": str(test_x.index[0].date()),
-            "teste_fim": str(test_x.index[-1].date()),
-            "amostras_teste": int(len(test_x)),
-            "eventos_teste": int(test_y.sum()),
+            "train_start": str(train_x.index[0].date()),
+            "train_end": str(train_x.index[-1].date()),
+            "calibration_start": str(calibration_x.index[0].date()),
+            "calibration_end": str(calibration_x.index[-1].date()),
+            "test_start": str(test_x.index[0].date()),
+            "test_end": str(test_x.index[-1].date()),
+            "test_samples": int(len(test_x)),
+            "test_events": int(test_y.sum()),
         })
 
     if len(fold_meta) < 2 or len(set(actuals)) < 2:
         return {
-            "status": "dados_insuficientes", "amostras": int(len(frame)),
-            "eventos": rare["eventos"], "eventos_raros": rare,
-            "motivo": "menos de duas dobras temporais válidas com ambas as classes no conjunto agregado",
-            "walk_forward": {"dobras_validas": len(fold_meta), "dobras": fold_meta},
+            "status": "insufficient_data", "samples": int(len(frame)),
+            "events": rare["events"], "rare_events": rare,
+            "reason": "menos de duas dobras temporais válidas com ambas as classes no conjunto agregado",
+            "walk_forward": {"valid_folds": len(fold_meta), "folds": fold_meta},
         }
 
     pred_oos = np.asarray(predictions, dtype=float)
@@ -835,10 +837,10 @@ def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> 
     final_start = _latest_temporal_partition(y, min_samples, final_calibration_size)
     if final_start is None:
         return {
-            "status": "dados_insuficientes", "amostras": int(len(frame)),
-            "eventos": rare["eventos"], "eventos_raros": rare,
-            "motivo": "janela temporal final sem as duas classes para calibração",
-            "walk_forward": {"dobras_validas": len(fold_meta), "dobras": fold_meta},
+            "status": "insufficient_data", "samples": int(len(frame)),
+            "events": rare["events"], "rare_events": rare,
+            "reason": "janela temporal final sem as duas classes para calibração",
+            "walk_forward": {"valid_folds": len(fold_meta), "folds": fold_meta},
         }
     final_train_x, final_train_y = frame.iloc[:final_start], y.iloc[:final_start]
     final_calibration_x, final_calibration_y = frame.iloc[final_start:], y.iloc[final_start:]
@@ -848,16 +850,16 @@ def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> 
         )
     except ValueError as exc:
         return {
-            "status": "dados_insuficientes", "amostras": int(len(frame)),
-            "eventos": rare["eventos"], "eventos_raros": rare, "motivo": str(exc),
-            "walk_forward": {"dobras_validas": len(fold_meta), "dobras": fold_meta},
+            "status": "insufficient_data", "samples": int(len(frame)),
+            "events": rare["events"], "rare_events": rare, "reason": str(exc),
+            "walk_forward": {"valid_folds": len(fold_meta), "folds": fold_meta},
         }
 
     current_candidates = all_features.loc[all_features.notna().sum(axis=1).gt(0)]
     if current_candidates.empty:
-        return {"status": "dados_insuficientes", "amostras": int(len(frame)),
-                "eventos": rare["eventos"], "eventos_raros": rare,
-                "motivo": "sem observação atual utilizável"}
+        return {"status": "insufficient_data", "samples": int(len(frame)),
+                "events": rare["events"], "rare_events": rare,
+                "reason": "sem observação atual utilizável"}
     current_x = current_candidates.iloc[[-1]][usable]
     calibrated_current = float(_predict_ensemble(logit, boost, calibrator, current_x)[0])
     probability = float(np.clip(
@@ -869,16 +871,16 @@ def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> 
         "brier": safe_number(brier),
         "log_loss": safe_number(log_loss(actual_oos, pred_oos, labels=[0, 1])),
         "auc": safe_number(roc_auc_score(actual_oos, pred_oos)),
-        "acuracia": safe_number(np.mean((pred_oos >= .5) == actual_oos)),
-        "taxa_base": safe_number(base_rate), "confianca_modelo": safe_number(reliability),
-        "amostras_teste": int(len(actual_oos)), "amostras_total": int(len(frame)),
-        "eventos": rare["eventos"], "dobras": len(fold_meta),
+        "accuracy": safe_number(np.mean((pred_oos >= .5) == actual_oos)),
+        "base_rate": safe_number(base_rate), "model_confidence": safe_number(reliability),
+        "test_samples": int(len(actual_oos)), "total_samples": int(len(frame)),
+        "events": rare["events"], "folds": len(fold_meta),
     }
     auc = metrics["auc"] or 0
-    quality = "alta" if auc >= .70 and brier <= .20 else "moderada" if auc >= .58 else "baixa"
+    quality = "high" if auc >= .70 and brier <= .20 else "moderate" if auc >= .58 else "low"
     bins = min(8, max(3, len(actual_oos) // 25))
     observed, predicted = calibration_curve(actual_oos, pred_oos, n_bins=bins, strategy="quantile")
-    calibration = [{"previsto": safe_number(p), "observado": safe_number(o)}
+    calibration = [{"predicted": safe_number(p), "observed": safe_number(o)}
                    for p, o in zip(predicted, observed)]
     error = min(.35, max(.05, 1.96 * math.sqrt(max(brier, .001) / max(len(actual_oos), 1))))
 
@@ -888,38 +890,38 @@ def fit_forecast(features: pd.DataFrame, target: pd.Series, min_samples=180) -> 
     coef = logit.named_steps["model"].coef_[0]
     contributions = coef[:len(names)] * scaled[:len(names)]
     order = np.argsort(np.abs(contributions))[::-1][:8]
-    drivers = [{"nome": names[i], "impacto": safe_number(contributions[i]),
-                "direcao": "aumenta" if contributions[i] >= 0 else "reduz"} for i in order]
+    drivers = [{"name": names[i], "impact": safe_number(contributions[i]),
+                "direction": "up" if contributions[i] >= 0 else "down"} for i in order]
     history = [
-        {"data": str(pd.Timestamp(date).date()), "probabilidade": safe_number(prob), "ocorreu": int(actual)}
+        {"date": str(pd.Timestamp(date).date()), "probability": safe_number(prob), "occurred": int(actual)}
         for date, prob, actual in zip(dates[-240:], pred_oos[-240:], actual_oos[-240:])
     ]
     return {
-        "status": "ok", "probabilidade": safe_number(probability), "qualidade": quality,
-        "intervalo": [safe_number(max(0, probability - error)),
+        "status": "ok", "probability": safe_number(probability), "quality": quality,
+        "interval": [safe_number(max(0, probability - error)),
                       safe_number(min(1, probability + error))],
-        "metricas": metrics, "calibracao": calibration, "drivers": drivers,
-        "historico_teste": history,
-        "ultima_observacao": str(current_candidates.index[-1].date()),
-        "eventos_raros": rare,
+        "metrics": metrics, "calibration": calibration, "drivers": drivers,
+        "test_history": history,
+        "last_observation": str(current_candidates.index[-1].date()),
+        "rare_events": rare,
         "walk_forward": {
-            "metodo": "janela expansiva; calibração e teste contíguos posteriores ao treino",
-            "dobras_validas": len(fold_meta), "dobras": fold_meta,
-            "previsoes_fora_amostra": int(len(actual_oos)),
+            "method": "janela expansiva; calibração e teste contíguos posteriores ao treino",
+            "valid_folds": len(fold_meta), "folds": fold_meta,
+            "out_of_sample": int(len(actual_oos)),
         },
-        "calibracao_temporal": {
-            "metodo": "isotônica",
-            "treino_fim": str(final_train_x.index[-1].date()),
-            "calibracao_inicio": str(final_calibration_x.index[0].date()),
-            "calibracao_fim": str(final_calibration_x.index[-1].date()),
+        "temporal_calibration": {
+            "method": "isotônica",
+            "train_end": str(final_train_x.index[-1].date()),
+            "calibration_start": str(final_calibration_x.index[0].date()),
+            "calibration_end": str(final_calibration_x.index[-1].date()),
         },
     }
 
 
 def add_forecast(collection: list, forecast_id: str, title: str, kind: str,
                  horizon: str, result: dict, description: str) -> None:
-    collection.append({"id": forecast_id, "titulo": title, "tipo": kind,
-                       "horizonte": horizon, "descricao": description, **result})
+    collection.append({"id": forecast_id, "title": title, "kind": kind,
+                       "horizon": horizon, "description": description, **result})
 
 
 def latest_indicator(frame: pd.DataFrame, key: str, label: str, unit="", digits=2) -> dict | None:
@@ -928,13 +930,13 @@ def latest_indicator(frame: pd.DataFrame, key: str, label: str, unit="", digits=
     series = frame[key].dropna()
     current = series.iloc[-1]
     previous = series.iloc[-2] if len(series) > 1 else np.nan
-    return {"id": key, "nome": label, "valor": safe_number(current, digits), "unidade": unit,
-            "variacao": safe_number(current - previous, digits), "data": str(series.index[-1].date())}
+    return {"id": key, "name": label, "value": safe_number(current, digits), "unit": unit,
+            "change": safe_number(current - previous, digits), "date": str(series.index[-1].date())}
 
 
 
 def period_metrics(series: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> dict | None:
-    """Resume apenas observações existentes na janela; não interpola dados ausentes."""
+    # only what was actually observed in the window, no interpolation
     clean = series.dropna().sort_index()
     window = clean.loc[(clean.index >= start) & (clean.index <= end)]
     if len(window) < 2:
@@ -942,21 +944,21 @@ def period_metrics(series: pd.Series, start: pd.Timestamp, end: pd.Timestamp) ->
     returns = window.pct_change(fill_method=None).dropna()
     drawdown = window / window.cummax() - 1
     return {
-        "inicio_observado": str(window.index[0].date()),
-        "fim_observado": str(window.index[-1].date()),
-        "observacoes": int(len(window)),
-        "retorno": safe_number(window.iloc[-1] / window.iloc[0] - 1),
-        "drawdown_maximo": safe_number(drawdown.min()),
-        "volatilidade_anualizada": safe_number(returns.std() * math.sqrt(252)) if len(returns) > 1 else None,
+        "observed_start": str(window.index[0].date()),
+        "observed_end": str(window.index[-1].date()),
+        "observations": int(len(window)),
+        "return": safe_number(window.iloc[-1] / window.iloc[0] - 1),
+        "max_drawdown": safe_number(drawdown.min()),
+        "annualized_volatility": safe_number(returns.std() * math.sqrt(252)) if len(returns) > 1 else None,
     }
 
 
 def recession_comparisons(monthly: pd.DataFrame, markets: pd.DataFrame) -> list[dict]:
-    """Compara janelas fixas ao redor das recessões oficiais, deixando lacunas explícitas."""
+    """Fixed windows around the official NBER recessions; gaps stay explicit (None), never filled."""
     output = []
     for episode in NBER_EPISODES:
-        recession_start = pd.Timestamp(episode["inicio"])
-        recession_end = pd.Timestamp(episode["fim"])
+        recession_start = pd.Timestamp(episode["start"])
+        recession_end = pd.Timestamp(episode["end"])
         analysis_start = recession_start - pd.DateOffset(months=12)
         analysis_end = recession_end + pd.DateOffset(months=6)
         assets, missing = {}, []
@@ -976,31 +978,31 @@ def recession_comparisons(monthly: pd.DataFrame, markets: pd.DataFrame) -> list[
             if not curve_window.empty:
                 before = curve_window.loc[curve_window.index <= recession_start]
                 curve = {
-                    "valor_pre_recessao": safe_number(before.iloc[-1]) if not before.empty else None,
-                    "minimo_janela": safe_number(curve_window.min()),
-                    "maximo_janela": safe_number(curve_window.max()),
-                    "inicio_observado": str(curve_window.index[0].date()),
-                    "fim_observado": str(curve_window.index[-1].date()),
+                    "pre_recession_value": safe_number(before.iloc[-1]) if not before.empty else None,
+                    "window_min": safe_number(curve_window.min()),
+                    "window_max": safe_number(curve_window.max()),
+                    "observed_start": str(curve_window.index[0].date()),
+                    "observed_end": str(curve_window.index[-1].date()),
                 }
         output.append({
-            "id": episode["id"], "nome": episode["nome"],
-            "periodo_nber": [str(recession_start.date()), str(recession_end.date())],
-            "janela_analitica": [str(analysis_start.date()), str(analysis_end.date())],
-            "regra_janela": "12 meses antes do início NBER até 6 meses após o fim NBER",
-            "ativos": assets, "curva_10a_3m": curve,
-            "cobertura": "completa" if not missing else "parcial",
-            "series_ausentes": missing,
-            "origem": {
-                "recessoes": "NBER Business Cycle Dating Committee",
+            "id": episode["id"], "name": episode["name"],
+            "nber_period": [str(recession_start.date()), str(recession_end.date())],
+            "analysis_window": [str(analysis_start.date()), str(analysis_end.date())],
+            "window_rule": "12 meses antes do início NBER até 6 meses após o fim NBER",
+            "assets": assets, "curve_10y_3m": curve,
+            "coverage": "complete" if not missing else "partial",
+            "missing_series": missing,
+            "origin": {
+                "recessions": "NBER Business Cycle Dating Committee",
                 "url": NBER_SOURCE_URL,
-                "mercados": "Yahoo Finance; somente fechamentos existentes na cobertura coletada",
+                "markets": "Yahoo Finance; somente fechamentos existentes na cobertura coletada",
             },
         })
     return output
 
 
 def btc_cycle_comparisons(markets: pd.DataFrame) -> list[dict]:
-    """Segmenta os ciclos disponíveis por halvings verificáveis na blockchain."""
+    # cycles split at the halving blocks, which are verifiable on-chain
     if "btc" not in markets or markets["btc"].dropna().empty:
         return []
     btc = markets["btc"].dropna().sort_index()
@@ -1015,15 +1017,15 @@ def btc_cycle_comparisons(markets: pd.DataFrame) -> list[dict]:
         metrics = period_metrics(btc, start, end)
         if metrics is None:
             continue
-        observed_start = pd.Timestamp(metrics["inicio_observado"])
+        observed_start = pd.Timestamp(metrics["observed_start"])
         complete_start = abs((observed_start - start).days) <= 7
         output.append({
-            "id": f"halving_{block}", "nome": f"Ciclo após halving do bloco {block}",
-            "inicio": str(start.date()), "fim": str(end.date()),
-            "completo_desde_halving": complete_start,
-            "metricas": metrics,
-            "origem": "Bitcoin blockchain: timestamp público do bloco de halving; preços Yahoo Finance",
-            "limitacao": (
+            "id": f"halving_{block}", "name": f"Ciclo após halving do bloco {block}",
+            "start": str(start.date()), "end": str(end.date()),
+            "complete_since_halving": complete_start,
+            "metrics": metrics,
+            "origin": "Bitcoin blockchain: timestamp público do bloco de halving; preços Yahoo Finance",
+            "limitation": (
                 None if complete_start
                 else "A série de preços disponível começa depois do halving; métricas cobrem só o trecho observado."
             ),
@@ -1033,9 +1035,9 @@ def btc_cycle_comparisons(markets: pd.DataFrame) -> list[dict]:
 
 def build_historical_benchmarks(monthly: pd.DataFrame, markets: pd.DataFrame) -> dict:
     return {
-        "recessoes": recession_comparisons(monthly, markets),
-        "ciclos_btc": btc_cycle_comparisons(markets),
-        "limitacoes": [
+        "recessions": recession_comparisons(monthly, markets),
+        "btc_cycles": btc_cycle_comparisons(markets),
+        "limitations": [
             "Comparações são descritivas e não implicam repetição do episódio.",
             "Valores ausentes permanecem nulos; não há interpolação nem reconstrução de preços.",
             "Datas de recessão seguem o NBER; janelas de mercado são regras analíticas declaradas.",
@@ -1047,7 +1049,7 @@ def build_historical_benchmarks(monthly: pd.DataFrame, markets: pd.DataFrame) ->
 def find_similar_episodes(features: pd.DataFrame, recession: pd.Series,
                           markets: pd.DataFrame, limit: int = 5,
                           separation_months: int = 12) -> list[dict]:
-    """Localiza estados macro passados, reservando horizonte para observar o desfecho."""
+    """Past macro states closest to today, leaving 12 months after each so the outcome is known."""
     frame = features.replace([np.inf, -np.inf], np.nan).sort_index()
     valid_current = frame.loc[frame.notna().sum(axis=1).gt(0)]
     if valid_current.empty:
@@ -1075,12 +1077,12 @@ def find_similar_episodes(features: pd.DataFrame, recession: pd.Series,
     monthly_market = markets.resample("MS").last().reindex(frame.index).ffill()
     selected = []
     for date, distance in distances.items():
-        if any(abs((date.to_period("M") - pd.Timestamp(item["data"]).to_period("M")).n)
+        if any(abs((date.to_period("M") - pd.Timestamp(item["date"]).to_period("M")).n)
                < separation_months for item in selected):
             continue
-        outcomes = {"recessao_12m": None, "sp500_6m": None, "btc_6m": None}
+        outcomes = {"recession_12m": None, "sp500_6m": None, "btc_6m": None}
         if date in recession_outcome.index and pd.notna(recession_outcome.loc[date]):
-            outcomes["recessao_12m"] = bool(recession_outcome.loc[date])
+            outcomes["recession_12m"] = bool(recession_outcome.loc[date])
         for key, result_key in (("sp500", "sp500_6m"), ("btc", "btc_6m")):
             if key in monthly_market and date in monthly_market.index:
                 start_value = monthly_market.loc[date, key]
@@ -1090,11 +1092,11 @@ def find_similar_episodes(features: pd.DataFrame, recession: pd.Series,
                     if pd.notna(start_value) and pd.notna(future_value) and start_value != 0:
                         outcomes[result_key] = safe_number(future_value / start_value - 1)
         selected.append({
-            "data": str(date.date()), "distancia": safe_number(distance),
-            "similaridade": safe_number(1 / (1 + distance)),
-            "variaveis_comparadas": int(history.loc[date].notna().sum()),
-            "desfecho_observado": outcomes,
-            "nota": "Similaridade padronizada; seleção usa apenas datas anteriores ao horizonte reservado.",
+            "date": str(date.date()), "distance": safe_number(distance),
+            "similarity": safe_number(1 / (1 + distance)),
+            "compared_variables": int(history.loc[date].notna().sum()),
+            "observed_outcome": outcomes,
+            "note": "Similaridade padronizada; seleção usa apenas datas anteriores ao horizonte reservado.",
         })
         if len(selected) >= limit:
             break
@@ -1102,34 +1104,34 @@ def find_similar_episodes(features: pd.DataFrame, recession: pd.Series,
 
 
 def build_statistical_scenarios(forecasts: list[dict]) -> list[dict]:
-    """Transforma intervalos já calculados em cenários, sem criar premissas externas."""
-    usable = [item for item in forecasts if item.get("status") == "ok" and item.get("intervalo")]
-    preferred = ["recessao_12m", "sp_stress_90d", "btc_alta_60d"]
+    # scenarios are just the interval bounds already computed, no made-up assumptions
+    usable = [item for item in forecasts if item.get("status") == "ok" and item.get("interval")]
+    preferred = ["recession_12m", "sp_stress_90d", "btc_alta_60d"]
     chosen = [next((item for item in usable if item["id"] == key), None) for key in preferred]
     chosen = [item for item in chosen if item is not None]
     if not chosen:
         chosen = usable[:3]
     definitions = [
-        ("limite_inferior", "Limite inferior", 0,
+        ("lower", "Limite inferior", 0,
          "Limite inferior do intervalo estatístico de cada previsão."),
         ("central", "Estimativa central", None,
          "Probabilidade central calibrada pelo backtest walk-forward."),
-        ("limite_superior", "Limite superior", 1,
+        ("upper", "Limite superior", 1,
          "Limite superior do intervalo estatístico de cada previsão."),
     ]
     scenarios = []
     for scenario_id, name, bound, assumption in definitions:
         values = {}
         for item in chosen:
-            probability = item["probabilidade"] if bound is None else item["intervalo"][bound]
+            probability = item["probability"] if bound is None else item["interval"][bound]
             values[item["id"]] = {
-                "titulo": item["titulo"], "horizonte": item["horizonte"],
-                "probabilidade": probability,
+                "title": item["title"], "horizon": item["horizon"],
+                "probability": probability,
             }
         scenarios.append({
-            "id": scenario_id, "nome": name, "tipo": "faixa_estatistica",
-            "premissa": assumption, "previsoes": values,
-            "limitacao": "Não representa consenso nem cenário causal; apenas a incerteza estimada do modelo.",
+            "id": scenario_id, "name": name, "kind": "statistical_band",
+            "assumption": assumption, "forecasts": values,
+            "limitation": "Não representa consenso nem cenário causal; apenas a incerteza estimada do modelo.",
         })
     return scenarios
 
@@ -1137,38 +1139,38 @@ def build_statistical_scenarios(forecasts: list[dict]) -> list[dict]:
 def load_prediction_history(path: Path = HISTORY, forecast_titles: dict | None = None,
                             limit: int = 120) -> dict:
     if not path.exists():
-        return {"series": [], "observacoes": 0}
+        return {"series": [], "observations": 0}
     try:
         frame = pd.read_csv(path)
-        if "gerado_em" not in frame:
-            return {"series": [], "observacoes": 0}
-        frame["gerado_em"] = pd.to_datetime(frame["gerado_em"], errors="coerce", utc=True)
-        frame = frame.dropna(subset=["gerado_em"]).sort_values("gerado_em").tail(limit)
+        if "generated_at" not in frame:
+            return {"series": [], "observations": 0}
+        frame["generated_at"] = pd.to_datetime(frame["generated_at"], errors="coerce", utc=True)
+        frame = frame.dropna(subset=["generated_at"]).sort_values("generated_at").tail(limit)
         titles = forecast_titles or {}
         series = []
         for column in frame.columns:
-            if column == "gerado_em" or column == "snapshot_id":
+            if column == "generated_at" or column == "snapshot_id":
                 continue
             points = []
-            for date, value in zip(frame["gerado_em"], pd.to_numeric(frame[column], errors="coerce")):
+            for date, value in zip(frame["generated_at"], pd.to_numeric(frame[column], errors="coerce")):
                 if pd.notna(value):
-                    points.append({"data": date.isoformat(), "probabilidade": safe_number(value)})
+                    points.append({"date": date.isoformat(), "probability": safe_number(value)})
             if points:
-                series.append({"id": column, "titulo": titles.get(column, column), "pontos": points})
-        return {"series": series, "observacoes": int(len(frame)), "limite": limit}
+                series.append({"id": column, "title": titles.get(column, column), "points": points})
+        return {"series": series, "observations": int(len(frame)), "limit": limit}
     except Exception as exc:
-        return {"series": [], "observacoes": 0, "erro": str(exc)[:180]}
+        return {"series": [], "observations": 0, "error": str(exc)[:180]}
 
 
 def snapshot_identity(payload: dict) -> str:
     stable = {
-        "cobertura": payload.get("cobertura", {}),
-        "previsoes": {
+        "coverage": payload.get("coverage", {}),
+        "forecasts": {
             item["id"]: {
-                "probabilidade": item.get("probabilidade"),
-                "ultima_observacao": item.get("ultima_observacao"),
+                "probability": item.get("probability"),
+                "last_observation": item.get("last_observation"),
             }
-            for item in payload.get("previsoes", [])
+            for item in payload.get("forecasts", [])
         },
     }
     encoded = json.dumps(stable, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -1189,13 +1191,13 @@ def _atomic_csv(path: Path, frame: pd.DataFrame) -> None:
 
 def append_snapshot(payload: dict, path: Path = HISTORY) -> bool:
     identity = snapshot_identity(payload)
-    row = {"gerado_em": payload["gerado_em"], "snapshot_id": identity}
-    for item in payload["previsoes"]:
-        row[item["id"]] = item.get("probabilidade")
+    row = {"generated_at": payload["generated_at"], "snapshot_id": identity}
+    for item in payload["forecasts"]:
+        row[item["id"]] = item.get("probability")
     new = pd.DataFrame([row])
     old = pd.read_csv(path) if path.exists() else pd.DataFrame()
     if not old.empty and "snapshot_id" not in old:
-        value_columns = [column for column in old.columns if column != "gerado_em"]
+        value_columns = [column for column in old.columns if column != "generated_at"]
         old["snapshot_id"] = old[value_columns].apply(
             lambda values: "legacy-" + hashlib.sha256(
                 json.dumps(values.fillna("").to_dict(), sort_keys=True, default=str).encode()
@@ -1213,7 +1215,7 @@ def build(years: int) -> dict:
     markets, market_status = fetch_markets(years)
     fred, fred_status = fetch_fred()
     if markets.empty:
-        raise RuntimeError("Nenhuma série de mercado respondeu; saída anterior preservada.")
+        raise RuntimeError("no market series came back, keeping the previous output")
     onchain = load_onchain()
     daily = daily_features(markets, onchain)
     monthly, recession = monthly_features(fred, markets)
@@ -1221,7 +1223,7 @@ def build(years: int) -> dict:
 
     for horizon in (6, 12):
         result = fit_forecast(monthly, future_any(recession, horizon), min_samples=180)
-        add_forecast(forecasts, f"recessao_{horizon}m", "Recessão dos EUA", "macro",
+        add_forecast(forecasts, f"recession_{horizon}m", "Recessão dos EUA", "macro",
                      f"{horizon} meses", result,
                      "Probabilidade de existir ao menos um mês NBER de recessão no horizonte.")
 
@@ -1229,7 +1231,7 @@ def build(years: int) -> dict:
         for days, threshold in ((30, -.10), (90, -.10), (180, -.20)):
             result = fit_forecast(daily, future_drawdown(markets["sp500"], days, threshold), min_samples=700)
             add_forecast(forecasts, f"sp_stress_{days}d", f"S&P 500: queda de {abs(threshold):.0%}",
-                         "estresse", f"{days} pregões", result,
+                         "stress", f"{days} pregões", result,
                          "Probabilidade de o menor fechamento futuro ultrapassar o limite de queda.")
 
     for asset, label in (("btc", "Bitcoin"), ("nasdaq", "Nasdaq"), ("sp500", "S&P 500")):
@@ -1237,61 +1239,61 @@ def build(years: int) -> dict:
             continue
         for horizon in (1, 5, 20, 60):
             result = fit_forecast(daily, future_direction(markets[asset], horizon), min_samples=700)
-            add_forecast(forecasts, f"{asset}_alta_{horizon}d", f"{label}: retorno positivo",
-                         "direcao", f"{horizon} pregões", result,
+            add_forecast(forecasts, f"{asset}_up_{horizon}d", f"{label}: retorno positivo",
+                         "direction", f"{horizon} pregões", result,
                          "Probabilidade calibrada de o fechamento futuro superar o atual.")
 
-    # Eventos macro mensais. A comparação é com o valor anterior, não consenso de mercado.
+    # monthly macro events vs the PREVIOUS print, not vs consensus (no free consensus feed)
     if "cpi" in fred:
         cpi_mom = fred["cpi"].resample("MS").last().pct_change(fill_method=None)
         target = (cpi_mom.shift(-1) > cpi_mom).astype(float).where(cpi_mom.shift(-1).notna())
-        add_forecast(forecasts, "cpi_acelera", "CPI acelera", "inflacao", "próxima divulgação",
+        add_forecast(forecasts, "cpi_accelerates", "CPI acelera", "inflation", "próxima divulgação",
                      fit_forecast(monthly, target, min_samples=300),
                      "Probabilidade de a variação mensal superar a leitura mensal anterior.")
     if "core_pce" in fred:
         pce_mom = fred["core_pce"].resample("MS").last().pct_change(fill_method=None)
         target = (pce_mom.shift(-1) > pce_mom).astype(float).where(pce_mom.shift(-1).notna())
-        add_forecast(forecasts, "pce_acelera", "Core PCE acelera", "inflacao", "próxima divulgação",
+        add_forecast(forecasts, "pce_accelerates", "Core PCE acelera", "inflation", "próxima divulgação",
                      fit_forecast(monthly, target, min_samples=300),
                      "Probabilidade de a variação mensal superar a leitura mensal anterior.")
     if "payroll" in fred:
         payroll_change = fred["payroll"].resample("MS").last().diff()
         slower = (payroll_change.shift(-1) < payroll_change).astype(float).where(payroll_change.shift(-1).notna())
         negative = (payroll_change.shift(-1) < 0).astype(float).where(payroll_change.shift(-1).notna())
-        add_forecast(forecasts, "payroll_desacelera", "Payroll desacelera", "emprego", "próxima divulgação",
+        add_forecast(forecasts, "payroll_slows", "Payroll desacelera", "jobs", "próxima divulgação",
                      fit_forecast(monthly, slower, min_samples=300),
                      "Probabilidade de a criação líquida de vagas ficar abaixo da leitura anterior.")
-        add_forecast(forecasts, "payroll_negativo", "Payroll negativo", "emprego", "próxima divulgação",
+        add_forecast(forecasts, "payroll_negative", "Payroll negativo", "jobs", "próxima divulgação",
                      fit_forecast(monthly, negative, min_samples=300),
                      "Probabilidade de destruição líquida de vagas; evento historicamente raro.")
     if "unemployment" in fred:
         unemp = fred["unemployment"].resample("MS").last()
         rise = (unemp.shift(-1) - unemp >= .2).astype(float).where(unemp.shift(-1).notna())
-        add_forecast(forecasts, "desemprego_sobe", "Desemprego sobe ≥ 0,2 pp", "emprego", "próxima divulgação",
+        add_forecast(forecasts, "unemployment_rises", "Desemprego sobe ≥ 0,2 pp", "jobs", "próxima divulgação",
                      fit_forecast(monthly, rise, min_samples=300),
                      "Probabilidade de aumento mensal de pelo menos 0,2 ponto percentual.")
 
     benchmarks = []
     base12 = future_any(recession, 12).dropna().mean()
-    benchmarks.append({"nome": "Frequência-base NBER", "horizonte": "12 meses",
-                       "probabilidade": safe_number(base12),
-                       "descricao": "Frequência histórica de recessão no horizonte, sem variáveis explicativas."})
+    benchmarks.append({"name": "Frequência-base NBER", "horizon": "12 meses",
+                       "probability": safe_number(base12),
+                       "description": "Frequência histórica de recessão no horizonte, sem variáveis explicativas."})
     if "term_spread" in monthly:
         spread = monthly["term_spread"].dropna()
         if not spread.empty:
             benchmarks.append({
-                "nome": "Curva Treasury 10a–3m atual", "horizonte": "estado atual",
-                "valor": safe_number(spread.iloc[-1]),
-                "data": str(spread.index[-1].date()),
-                "descricao": "Diferença observada entre Treasury de 10 anos e 3 meses; valor negativo indica inversão.",
+                "name": "Curva Treasury 10a–3m atual", "horizon": "estado atual",
+                "value": safe_number(spread.iloc[-1]),
+                "date": str(spread.index[-1].date()),
+                "description": "Diferença observada entre Treasury de 10 anos e 3 meses; valor negativo indica inversão.",
             })
         result = fit_forecast(monthly[["term_spread"]], future_any(recession, 12), min_samples=300)
-        benchmarks.append({"nome": "Estrella–Mishkin (curva 10a–3m)", "horizonte": "12 meses", **result})
+        benchmarks.append({"name": "Estrella–Mishkin (curva 10a–3m)", "horizon": "12 meses", **result})
     if "sahm_realtime" in fred and not fred["sahm_realtime"].dropna().empty:
         value = float(fred["sahm_realtime"].dropna().iloc[-1])
-        benchmarks.append({"nome": "Sahm Rule em tempo real", "horizonte": "estado atual",
-                           "valor": safe_number(value), "sinal": bool(value >= .5),
-                           "descricao": "Sinaliza recessão quando alcança 0,50 pp."})
+        benchmarks.append({"name": "Sahm Rule em tempo real", "horizon": "estado atual",
+                           "value": safe_number(value), "signal": bool(value >= .5),
+                           "description": "Sinaliza recessão quando alcança 0,50 pp."})
 
     claims_state = fred_status.get("claims", {})
     credit_state = fred_status.get("hy_spread", {})
@@ -1301,12 +1303,12 @@ def build(years: int) -> dict:
         (fred, "cpi", "CPI", " índice", 2), (fred, "core_cpi", "Core CPI", " índice", 2),
         (fred, "unemployment", "Desemprego", "%", 2), (fred, "payroll", "Payroll", " mil", 0),
         (fred, "jolts", "Vagas JOLTS", " mil", 0),
-        (fred, "claims", claims_state.get("rotulo", "Claims"), claims_state.get("unidade", ""), 0),
+        (fred, "claims", claims_state.get("label", "Claims"), claims_state.get("unit", ""), 0),
         (fred, "dgs10", "Treasury 10 anos", "%", 2), (fred, "dgs3m", "Treasury 3 meses", "%", 2),
-        (fred, "hy_spread", credit_state.get("rotulo", "Spread high yield"),
-         credit_state.get("unidade", "%"), 2),
-        (fred, "nfci", nfci_state.get("rotulo", "Condições financeiras"),
-         nfci_state.get("unidade", ""), 2),
+        (fred, "hy_spread", credit_state.get("label", "Spread high yield"),
+         credit_state.get("unit", "%"), 2),
+        (fred, "nfci", nfci_state.get("label", "Condições financeiras"),
+         nfci_state.get("unit", ""), 2),
         (markets, "vix", "VIX", "", 2), (markets, "btc", "Bitcoin", " US$", 0),
         (markets, "sp500", "S&P 500", "", 0), (markets, "nasdaq", "Nasdaq", "", 0),
     ]:
@@ -1317,7 +1319,7 @@ def build(years: int) -> dict:
     ok_sources = sum(1 for x in [*market_status.values(), *fred_status.values()] if x.get("ok"))
     all_sources = len(market_status) + len(fred_status)
     warnings = []
-    failed = [f"{k}: {v.get('erro', 'falhou')}" for k, v in {**market_status, **fred_status}.items() if not v.get("ok")]
+    failed = [f"{k}: {v.get('error', 'failed')}" for k, v in {**market_status, **fred_status}.items() if not v.get("ok")]
     if failed:
         warnings.append(f"{len(failed)} séries indisponíveis; modelos degradados sem interromper a atualização.")
     warnings.append("Probabilidades são estimativas estatísticas, não recomendação de investimento.")
@@ -1327,30 +1329,25 @@ def build(years: int) -> dict:
     similar_episodes = find_similar_episodes(monthly, recession, markets)
     scenarios = build_statistical_scenarios(forecasts)
     payload = {
-        "versao": PREDICTOR_SCHEMA_VERSION, "gerado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "cobertura": {"fontes_ok": ok_sources, "fontes_total": all_sources,
-                      "mercado_inicio": str(markets.index.min().date()), "mercado_fim": str(markets.index.max().date()),
-                      "macro_inicio": str(fred.index.min().date()) if not fred.empty else None,
-                      "macro_fim": str(fred.index.max().date()) if not fred.empty else None},
-        "previsoes": forecasts, "benchmarks": benchmarks, "indicadores": indicators,
-        "comparacoes_historicas": historical_benchmarks,
-        "episodios_similares": similar_episodes, "cenarios": scenarios,
-        "fontes": {"mercado": market_status, "macro": fred_status},
-        "governanca_dados": governance_summary, "avisos": warnings,
-        "falhas": failed,
-        "operacao": {
-            "sincronizacao_local": "Execute sincronizar-painel.bat após ligar o computador.",
-            "painel_local": LOCAL_DASHBOARD_URL,
-            "politica_git": "Somente fast-forward de origin/main com árvore de trabalho limpa.",
-        },
-        "metodologia": {
-            "validacao": MODEL_VALIDATION_DESCRIPTION,
+        "version": PREDICTOR_SCHEMA_VERSION, "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "coverage": {"sources_ok": ok_sources, "sources_total": all_sources,
+                      "market_start": str(markets.index.min().date()), "market_end": str(markets.index.max().date()),
+                      "macro_start": str(fred.index.min().date()) if not fred.empty else None,
+                      "macro_end": str(fred.index.max().date()) if not fred.empty else None},
+        "forecasts": forecasts, "benchmarks": benchmarks, "indicators": indicators,
+        "historical_comparisons": historical_benchmarks,
+        "similar_episodes": similar_episodes, "scenarios": scenarios,
+        "sources": {"market": market_status, "macro": fred_status},
+        "data_governance": governance_summary, "warnings": warnings,
+        "failures": failed,
+        "methodology": {
+            "validation": MODEL_VALIDATION_DESCRIPTION,
             "ensemble": "Regressão logística regularizada + gradient boosting.",
-            "anti_vazamento": "Variáveis macro deslocadas um mês; nenhuma divisão aleatória.",
-            "revisoes": "Períodos de referência validados; vintage histórico indisponível é declarado e mitigado por defasagem conservadora.",
-            "idempotencia": "Snapshots usam identidade estável de cobertura, observações e probabilidades.",
-            "metricas": "Brier, log loss, AUC, acurácia e curva de calibração fora da amostra.",
-            "comparacoes": "Recessões oficiais NBER com janela declarada; ciclos BTC segmentados por blocos de halving.",
+            "no_leakage": "Variáveis macro deslocadas um mês; nenhuma divisão aleatória.",
+            "revisions": "Períodos de referência validados; vintage histórico indisponível é declarado e mitigado por defasagem conservadora.",
+            "idempotency": "Snapshots usam identidade estável de cobertura, observações e probabilidades.",
+            "metrics": "Brier, log loss, AUC, acurácia e curva de calibração fora da amostra.",
+            "comparisons": "Recessões oficiais NBER com janela declarada; ciclos BTC segmentados por blocos de halving.",
         },
     }
     return payload
@@ -1358,21 +1355,22 @@ def build(years: int) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--anos-mercado", type=int, default=20)
-    parser.add_argument("--backtest", action="store_true", help="Mantido para interface; o backtest já faz parte da execução.")
+    parser.add_argument("--market-years", type=int, default=20)
+    # kept so old scripts/CI calls don't break, the backtest always runs now
+    parser.add_argument("--backtest", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     try:
-        payload = build(max(5, args.anos_mercado))
+        payload = build(max(5, args.market_years))
         append_snapshot(payload)
-        titles = {item["id"]: item["titulo"] for item in payload["previsoes"]}
-        payload["historico_previsoes"] = load_prediction_history(HISTORY, titles)
+        titles = {item["id"]: item["title"] for item in payload["forecasts"]}
+        payload["forecast_history"] = load_prediction_history(HISTORY, titles)
         atomic_json(OUTPUT, payload)
-        ok = sum(1 for x in payload["previsoes"] if x.get("status") == "ok")
-        print(f"OK: {ok}/{len(payload['previsoes'])} previsões válidas -> {OUTPUT}")
+        ok = sum(1 for x in payload["forecasts"] if x.get("status") == "ok")
+        print(f"ok: {ok}/{len(payload['forecasts'])} forecasts -> {OUTPUT}")
         return 0
     except Exception as exc:
-        print(f"FALHA: {type(exc).__name__}: {exc}")
-        print("A saída anterior foi preservada.")
+        print(f"FAILED: {type(exc).__name__}: {exc}")
+        print("previous output kept")
         return 1
 
 
